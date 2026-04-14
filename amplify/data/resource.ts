@@ -145,7 +145,7 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.publicApiKey()]),
 
-  Payment: a
+  OwnerPayment: a
     .model({
       ownerId: a.id().required(),
       amount: a.float().required(),
@@ -157,9 +157,9 @@ const schema = a.schema({
       createdAt: a.datetime(),
     })
     .secondaryIndexes((index) => [
-      index("ownerId").queryField("PaymentsByOwner"),
-      index("status").queryField("PaymentsByStatus"),
-      index("createdAt").queryField("PaymentsByDate"),
+      index("ownerId").queryField("OwnerPaymentsByOwner"),
+      index("status").queryField("OwnerPaymentsByStatus"),
+      index("createdAt").queryField("OwnerPaymentsByDate"),
     ])
     .authorization((allow) => [allow.publicApiKey()]),
 
@@ -168,6 +168,7 @@ const schema = a.schema({
       roomId: a.string().required(),
       meetingId: a.string(),
       meeting: a.string(),
+      description:a.string(),
       createdAt: a.datetime(),
       expiresAt: a.timestamp(),
     })
