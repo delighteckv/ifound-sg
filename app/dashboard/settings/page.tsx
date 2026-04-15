@@ -270,22 +270,27 @@ export default function SettingsPage() {
               <Shield className="mr-2 h-4 w-4" />
               Account
             </TabsTrigger>
-            <TabsTrigger value="branding" className="rounded-lg data-[state=active]:bg-background">
-              <Palette className="mr-2 h-4 w-4" />
-              Branding
-            </TabsTrigger>
+           
             <TabsTrigger value="notifications" className="rounded-lg data-[state=active]:bg-background">
               <Bell className="mr-2 h-4 w-4" />
               Notifications
-            </TabsTrigger>
+              </TabsTrigger>
+             {/*
+             
             <TabsTrigger value="security" className="rounded-lg data-[state=active]:bg-background">
               <Shield className="mr-2 h-4 w-4" />
               Security
             </TabsTrigger>
-            <TabsTrigger value="organization" className="rounded-lg data-[state=active]:bg-background">
+           
+            <TabsTrigger value="branding" className="rounded-lg data-[state=active]:bg-background">
+              <Palette className="mr-2 h-4 w-4" />
+              Branding
+            </TabsTrigger>
+             <TabsTrigger value="organization" className="rounded-lg data-[state=active]:bg-background">
               <Building2 className="mr-2 h-4 w-4" />
               Organization
             </TabsTrigger>
+            */}
           </TabsList>
 
           <TabsContent value="account" className="space-y-6">

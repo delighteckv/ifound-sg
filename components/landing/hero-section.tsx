@@ -1,11 +1,35 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
+import { fetchAuthSession } from "aws-amplify/auth"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, Scan, Shield, Bell } from "lucide-react"
 import Link from "next/link"
 
 export function HeroSection() {
+  const [isSignedIn, setIsSignedIn] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const checkSession = async () => {
+      try {
+        const session = await fetchAuthSession()
+        if (active) {
+          setIsSignedIn(Boolean(session.tokens?.idToken))
+        }
+      } catch {
+        if (active) {
+          setIsSignedIn(false)
+        }
+      }
+    }
+    void checkSession()
+    return () => {
+      active = false
+    }
+  }, [])
+
   return (
     <section className="relative px-4 pt-32 pb-20 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
@@ -51,8 +75,8 @@ export function HeroSection() {
                 className="rounded-full bg-gradient-to-r from-primary to-primary/80 hover:opacity-90 gap-2 text-base"
                 asChild
               >
-                <Link href="/login">
-                  Get Your QR Kit
+                <Link href={isSignedIn ? "/dashboard" : "/login"}>
+                  {isSignedIn ? "Go to Dashboard" : "Get Your QR Kit"}
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>

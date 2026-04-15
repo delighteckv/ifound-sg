@@ -4,12 +4,14 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
-import { Menu, X, QrCode } from "lucide-react"
+import { fetchAuthSession, signOut } from "aws-amplify/auth"
+import { LogOut, Menu, X, QrCode } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isSignedIn, setIsSignedIn] = useState(false)
 
   useEffect(() => {
     const handleScroll = () => {
@@ -19,11 +21,38 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
+  useEffect(() => {
+    let active = true
+    const checkSession = async () => {
+      try {
+        const session = await fetchAuthSession()
+        if (active) {
+          setIsSignedIn(Boolean(session.tokens?.idToken))
+        }
+      } catch {
+        if (active) {
+          setIsSignedIn(false)
+        }
+      }
+    }
+    void checkSession()
+    return () => {
+      active = false
+    }
+  }, [])
+
   const navItems = [
     { label: "How It Works", href: "#how-it-works" },
     { label: "Features", href: "#features" },
     { label: "Pricing", href: "#pricing" },
   ]
+
+  const handleSignOut = async () => {
+    await signOut()
+    setIsSignedIn(false)
+    setIsMobileMenuOpen(false)
+    window.location.href = "/"
+  }
 
   return (
     <motion.header
@@ -63,12 +92,31 @@ export function Navbar() {
 
         {/* CTA Buttons */}
         <div className="hidden items-center gap-3 md:flex">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/login">Sign In</Link>
-          </Button>
-          <Button size="sm" className="rounded-full bg-gradient-to-r from-primary to-primary/80 hover:opacity-90" asChild>
-            <Link href="/login">Get Started</Link>
-          </Button>
+          {isSignedIn ? (
+            <>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/dashboard">Go to Dashboard</Link>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-full"
+                onClick={() => void handleSignOut()}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/login">Sign In</Link>
+              </Button>
+              <Button size="sm" className="rounded-full bg-gradient-to-r from-primary to-primary/80 hover:opacity-90" asChild>
+                <Link href="/login">Get Started</Link>
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Mobile Menu Button */}
@@ -105,12 +153,26 @@ export function Navbar() {
               </Link>
             ))}
             <div className="flex flex-col gap-2 pt-4">
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/login">Sign In</Link>
-              </Button>
-              <Button size="sm" className="rounded-full bg-gradient-to-r from-primary to-primary/80" asChild>
-                <Link href="/login">Get Started</Link>
-              </Button>
+              {isSignedIn ? (
+                <>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href="/dashboard">Go to Dashboard</Link>
+                  </Button>
+                  <Button size="sm" variant="outline" className="rounded-full" onClick={() => void handleSignOut()}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign Out
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href="/login">Sign In</Link>
+                  </Button>
+                  <Button size="sm" className="rounded-full bg-gradient-to-r from-primary to-primary/80" asChild>
+                    <Link href="/login">Get Started</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </motion.div>

@@ -20,9 +20,6 @@ const joinMeetingMutation = /* GraphQL */ `
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") || ""
-  if (!auth.startsWith("Bearer ")) {
-    return NextResponse.json({ error: "Missing Authorization" }, { status: 401 })
-  }
 
   const body = await req.json().catch(() => null)
   const roomId = body?.roomId
@@ -32,9 +29,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "roomId is required" }, { status: 400 })
   }
 
-  const headers = {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: auth,
+  }
+  if (auth.startsWith("Bearer ")) {
+    headers.Authorization = auth
+  } else {
+    headers["x-api-key"] = outputs.data.api_key
   }
 
   const createRes = await fetch(outputs.data.url, {

@@ -31,6 +31,7 @@ import {
   Bell,
   Search,
   ChevronDown,
+  ShieldCheck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -69,6 +70,7 @@ const navItems = [
   {
     title: "System",
     items: [
+      { title: "Manage", href: "/dashboard/manage-cognito", icon: ShieldCheck, adminOnly: true },
       { title: "Settings", href: "/dashboard/settings", icon: Settings },
     ],
   },
@@ -88,7 +90,6 @@ export default function DashboardLayout({
   } | null>(null)
 
   const isAdmin = user?.groups?.includes("Admin") ?? false
-  const isOwner = user?.groups?.includes("Owner") ?? false
 
   const filteredNav = useMemo(() => {
     return navItems
@@ -112,13 +113,13 @@ export default function DashboardLayout({
 
         await syncCognitoAttributesFromToken()
 
-        if (!session.tokens?.idToken || (!groups.includes("Admin") && !groups.includes("Owner"))) {
+        if (!session.tokens?.idToken) {
           router.replace("/login")
           return
         }
 
         if (!groups.includes("Admin")) {
-          const adminOnlyRoutes = new Set(["/dashboard/users"])
+          const adminOnlyRoutes = new Set(["/dashboard/users", "/dashboard/manage-cognito"])
           if (adminOnlyRoutes.has(pathname)) {
             router.replace("/dashboard")
             return

@@ -236,11 +236,32 @@ function toQrBackendStatus(status: QRRow["status"]) {
 }
 
 function buildQrCodeValue(ownerId: string, code: string) {
-  return `ifound:${ownerId}:${code}`
+  return `${window.location.origin}/found/${encodeURIComponent(code)}`
 }
 
 function generateQrCodeCode() {
   return `QR-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`
+}
+
+function qrAssetPath(code: string) {
+  return `public/qr-codes/${code}.png`
+}
+
+async function uploadQrPng(code: string, payload: string) {
+  const response = await fetch("/api/qr/upload", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ code, payload }),
+  })
+
+  const json = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(json?.error || "Unable to upload QR image")
+  }
+
+  return json as { path: string; publicUrl: string }
 }
 
 export default function QRCodesPage() {
@@ -507,6 +528,8 @@ export default function QRCodesPage() {
           },
         })
 
+      await uploadQrPng(code, qrValue)
+
       setSuccess("QR code created")
       setIsCreateOpen(false)
       resetForm()
@@ -610,8 +633,16 @@ export default function QRCodesPage() {
   }
 
   const handleDownload = (row: QRRow) => {
-    const url = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(row.id)}`
-    window.open(url, "_blank", "noopener,noreferrer")
+    void (async () => {
+      try {
+        const payload = `${window.location.origin}/found/${encodeURIComponent(row.id)}`
+        await uploadQrPng(row.id, payload)
+        const result = await uploadQrPng(row.id, payload)
+        window.open(result.publicUrl, "_blank", "noopener,noreferrer")
+      } catch (err: any) {
+        setError(err?.message || "Unable to download QR code")
+      }
+    })()
   }
 
   const currentDialogTitle = selectedRow ? "Edit QR Code" : "Generate New QR Code"

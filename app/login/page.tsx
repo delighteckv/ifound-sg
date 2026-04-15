@@ -16,6 +16,7 @@ import {
   resendSignUpCode,
   signIn,
   signInWithRedirect,
+  signOut,
   signUp,
 } from "aws-amplify/auth"
 import { syncCognitoAttributesFromToken } from "@/lib/auth-sync"
@@ -49,17 +50,17 @@ export default function LoginPage() {
   const lastOtpSubmitted = useRef<string | null>(null)
   const identifierInputRef = useRef<HTMLInputElement | null>(null)
 
-  const routeByGroup = async () => {
+  const routeSignedInUser = async () => {
     const session = await fetchAuthSession()
     const payload = session.tokens?.idToken?.payload
     const groups = (payload?.["cognito:groups"] as string[] | undefined) ?? []
 
-    if (groups.includes("Admin") || groups.includes("Owner")) {
+    if (session.tokens?.idToken) {
       router.replace("/dashboard")
       return
     }
 
-    router.replace("/login")
+    router.replace("/")
   }
 
   useEffect(() => {
@@ -85,7 +86,7 @@ export default function LoginPage() {
               router.replace(postLink)
               return
             }
-            await routeByGroup()
+            await routeSignedInUser()
             return
           }
         } catch {
@@ -198,7 +199,7 @@ export default function LoginPage() {
           setStep("otp")
         } else {
           await signIn({ username: identifier, password })
-          await routeByGroup()
+          await routeSignedInUser()
         }
       } else if (mode === "signup") {
         const tempPassword = `Aa1!${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`
@@ -252,7 +253,7 @@ export default function LoginPage() {
         await confirmSignUp({ username: pendingIdentifier, confirmationCode: otp })
         try {
           await autoSignIn()
-          await routeByGroup()
+          await routeSignedInUser()
           return
         } catch {
           // fallback below
@@ -265,7 +266,7 @@ export default function LoginPage() {
           return
         }
         await signIn({ username: pendingIdentifier, password })
-        await routeByGroup()
+        await routeSignedInUser()
       } else {
         await confirmSignIn({ challengeResponse: otp })
         await syncCognitoAttributesFromToken()
@@ -282,7 +283,7 @@ export default function LoginPage() {
         } catch {
           // best-effort
         }
-        await routeByGroup()
+        await routeSignedInUser()
       }
     } catch (err: any) {
       setError(err?.message || "Invalid verification code")
@@ -312,11 +313,15 @@ export default function LoginPage() {
     try {
       const session = await fetchAuthSession()
       if (session.tokens?.idToken) {
-        await routeByGroup()
+        await routeSignedInUser()
         return
       }
       await signInWithRedirect({ provider: "Google" })
     } catch (err: any) {
+      if (err?.name === "UserAlreadyAuthenticatedException") {
+        await routeSignedInUser()
+        return
+      }
       setError(err?.message || "Google sign-in failed")
       setIsLoading(false)
     }
@@ -328,12 +333,28 @@ export default function LoginPage() {
     try {
       const session = await fetchAuthSession()
       if (session.tokens?.idToken) {
-        await routeByGroup()
+        await routeSignedInUser()
         return
       }
       await signInWithRedirect({ provider: "Apple" })
     } catch (err: any) {
+      if (err?.name === "UserAlreadyAuthenticatedException") {
+        await routeSignedInUser()
+        return
+      }
       setError(err?.message || "Apple sign-in failed")
+      setIsLoading(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    setIsLoading(true)
+    setError("")
+    try {
+      await signOut()
+      router.replace("/login")
+    } catch (err: any) {
+      setError(err?.message || "Unable to sign out")
       setIsLoading(false)
     }
   }
@@ -678,11 +699,11 @@ export default function LoginPage() {
 
           <p className="mt-8 text-center text-xs text-muted-foreground">
             By continuing, you agree to our{" "}
-            <Link href="#" className="text-primary hover:underline">
+            <Link href="/terms" className="text-primary hover:underline">
               Terms of Service
             </Link>{" "}
             and{" "}
-            <Link href="#" className="text-primary hover:underline">
+            <Link href="/privacy" className="text-primary hover:underline">
               Privacy Policy
             </Link>
           </p>

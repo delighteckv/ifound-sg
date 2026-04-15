@@ -18,6 +18,16 @@ const SubscriptionStatus = ["ACTIVE", "PAST_DUE", "CANCELLED", "EXPIRED"] as con
 const PaymentStatus = ["PENDING", "PAID", "FAILED", "REFUNDED"] as const;
 
 const schema = a.schema({
+  AnalyticsStats: a
+    .model({
+      scope: a.string().required(),
+      metric: a.string().required(),
+      value: a.float().required(),
+      updatedAt: a.datetime(),
+    })
+    .identifier(["scope", "metric"])
+    .authorization((allow) => [allow.publicApiKey()]),
+
   User: a
     .model({
       cognitoId: a.id().required(),

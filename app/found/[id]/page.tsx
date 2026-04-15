@@ -1,13 +1,14 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import { 
-  Phone, 
-  MessageSquare, 
-  MapPin, 
-  Send, 
-  CheckCircle, 
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useParams } from "next/navigation"
+import { motion } from "framer-motion"
+import {
+  Phone,
+  MessageSquare,
+  MapPin,
+  Send,
+  CheckCircle,
   QrCode,
   Video,
   VideoOff,
@@ -15,150 +16,549 @@ import {
   MicOff,
   PhoneOff,
   Camera,
-  Monitor,
   Volume2,
-  X
+  Loader2,
 } from "lucide-react"
+import {
+  ConsoleLogger,
+  DefaultDeviceController,
+  DefaultMeetingSession,
+  LogLevel,
+  MeetingSessionConfiguration,
+  type MeetingSession,
+} from "amazon-chime-sdk-js"
+import outputs from "@/amplify_outputs.json"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import Link from "next/link"
 
-// Mock item data - in production this would come from API
-const mockItem = {
-  id: "abc123",
-  name: "MacBook Pro 16\"",
-  category: "Electronics",
-  description: "Silver MacBook Pro with stickers on the cover",
-  ownerName: "John D.",
-  ownerAvatar: "J",
-  reward: "$50",
-  hasReward: true,
-  allowsCall: true,
-  allowsVideo: true,
+type GraphQLResponse<T> = {
+  data?: T
+  errors?: { message: string }[]
 }
 
-type CallState = "idle" | "connecting" | "ringing" | "connected" | "ended"
+type QrCodeRecord = {
+  code: string
+  ownerId?: string | null
+  valuableId?: string | null
+  status?: string | null
+  label?: string | null
+  createdAt?: string | null
+}
+
+type ValuableRecord = {
+  id: string
+  ownerId: string
+  name: string
+  description?: string | null
+  category?: string | null
+  status?: string | null
+}
+
+type UserRecord = {
+  cognitoId: string
+  firstName?: string | null
+  lastName?: string | null
+  displayName?: string | null
+  email?: string | null
+  phone?: string | null
+  primaryContact?: string | null
+}
+
+type FoundPageData = {
+  qrCode: QrCodeRecord
+  valuable: ValuableRecord | null
+  owner: UserRecord | null
+}
+
+type MeetingResponse = {
+  MeetingId: string
+  MediaPlacement?: Record<string, string>
+}
+
+type AttendeeResponse = {
+  AttendeeId: string
+  JoinToken: string
+}
+
+type CallState = "idle" | "connecting" | "connected" | "ended"
+
+const getQrCodeQuery = /* GraphQL */ `
+  query GetQrCode($code: String!) {
+    getQrCode(code: $code) {
+      code
+      ownerId
+      valuableId
+      status
+      label
+      createdAt
+    }
+  }
+`
+
+const getValuableQuery = /* GraphQL */ `
+  query GetValuable($id: ID!) {
+    getValuable(id: $id) {
+      id
+      ownerId
+      name
+      description
+      category
+      status
+    }
+  }
+`
+
+const getUserQuery = /* GraphQL */ `
+  query GetUser($cognitoId: ID!) {
+    getUser(cognitoId: $cognitoId) {
+      cognitoId
+      firstName
+      lastName
+      displayName
+      email
+      phone
+      primaryContact
+    }
+  }
+`
+
+const createMessageMutation = /* GraphQL */ `
+  mutation CreateMessage($input: CreateMessageInput!) {
+    createMessage(input: $input) {
+      id
+    }
+  }
+`
+
+const createScanEventMutation = /* GraphQL */ `
+  mutation CreateScanEvent($input: CreateScanEventInput!) {
+    createScanEvent(input: $input) {
+      id
+    }
+  }
+`
+
+function buildHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "x-api-key": outputs.data.api_key,
+  }
+}
+
+async function runPublicGraphQL<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+  const response = await fetch(outputs.data.url, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({ query, variables }),
+  })
+
+  const json = (await response.json()) as GraphQLResponse<T>
+  if (!response.ok || json.errors?.length) {
+    throw new Error(json.errors?.[0]?.message || "GraphQL request failed")
+  }
+
+  if (!json.data) {
+    throw new Error("GraphQL response did not include data")
+  }
+
+  return json.data
+}
+
+function getOwnerName(owner: UserRecord | null) {
+  const fullName = [owner?.firstName, owner?.lastName].filter(Boolean).join(" ").trim()
+  return owner?.displayName || fullName || owner?.email || owner?.phone || "the owner"
+}
+
+function getOwnerInitials(ownerName: string) {
+  return ownerName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "O"
+}
+
+function getOwnerRoomId(ownerId?: string | null) {
+  return ownerId ? `owner-${ownerId.slice(0, 8).toLowerCase()}` : ""
+}
+
+function formatDuration(seconds: number) {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, "0")}`
+}
 
 export default function FoundItemPage() {
+  const params = useParams<{ id: string }>()
+  const qrCodeId = decodeURIComponent(params.id)
+
+  const [item, setItem] = useState<FoundPageData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState("")
   const [showMessageDialog, setShowMessageDialog] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [showCallDialog, setShowCallDialog] = useState(false)
   const [message, setMessage] = useState("")
   const [finderContact, setFinderContact] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
-  // Call state
+  const [callError, setCallError] = useState("")
   const [callState, setCallState] = useState<CallState>("idle")
   const [isVideoCall, setIsVideoCall] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoEnabled, setIsVideoEnabled] = useState(true)
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true)
   const [callDuration, setCallDuration] = useState(0)
-  
-  const localVideoRef = useRef<HTMLVideoElement>(null)
-  const remoteVideoRef = useRef<HTMLVideoElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const [callStatus, setCallStatus] = useState("Ready")
+  const audioElementRef = useRef<HTMLAudioElement | null>(null)
+  const localVideoRef = useRef<HTMLVideoElement | null>(null)
+  const sessionRef = useRef<MeetingSession | null>(null)
+  const localVideoStreamRef = useRef<MediaStream | null>(null)
+  const hasRecordedInitialScanRef = useRef(false)
 
-  // Call timer
+  const ownerName = useMemo(() => getOwnerName(item?.owner ?? null), [item?.owner])
+  const ownerAvatar = useMemo(() => getOwnerInitials(ownerName), [ownerName])
+
+  useEffect(() => {
+    let active = true
+
+    const loadFoundItem = async () => {
+      try {
+        setIsLoading(true)
+        setLoadError("")
+
+        const qrResponse = await runPublicGraphQL<{ getQrCode: QrCodeRecord | null }>(
+          getQrCodeQuery,
+          { code: qrCodeId },
+        )
+        const qrCode = qrResponse.getQrCode
+        if (!qrCode) {
+          throw new Error("QR code was not found")
+        }
+
+        const [valuableResponse, ownerResponse] = await Promise.all([
+          qrCode.valuableId
+            ? runPublicGraphQL<{ getValuable: ValuableRecord | null }>(getValuableQuery, {
+                id: qrCode.valuableId,
+              })
+            : Promise.resolve({ getValuable: null }),
+          qrCode.ownerId
+            ? runPublicGraphQL<{ getUser: UserRecord | null }>(getUserQuery, {
+                cognitoId: qrCode.ownerId,
+              })
+            : Promise.resolve({ getUser: null }),
+        ])
+
+        if (!active) return
+
+        setItem({
+          qrCode,
+          valuable: valuableResponse.getValuable,
+          owner: ownerResponse.getUser,
+        })
+      } catch (error: any) {
+        if (active) {
+          setLoadError(error?.message || "Unable to load this QR code")
+        }
+      } finally {
+        if (active) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void loadFoundItem()
+
+    return () => {
+      active = false
+    }
+  }, [qrCodeId])
+
+  useEffect(() => {
+    if (!item || hasRecordedInitialScanRef.current) {
+      return
+    }
+
+    hasRecordedInitialScanRef.current = true
+    void runPublicGraphQL(createScanEventMutation, {
+      input: {
+        qrCodeId: item.qrCode.code,
+        valuableId: item.valuable?.id,
+        ownerId: item.qrCode.ownerId,
+        scannedAt: new Date().toISOString(),
+        channel: "UNKNOWN",
+      },
+    }).catch(() => {
+      hasRecordedInitialScanRef.current = false
+    })
+  }, [item])
+
   useEffect(() => {
     let interval: NodeJS.Timeout
     if (callState === "connected") {
       interval = setInterval(() => {
-        setCallDuration(prev => prev + 1)
+        setCallDuration((current) => current + 1)
       }, 1000)
     }
     return () => clearInterval(interval)
   }, [callState])
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, "0")}`
+  useEffect(() => {
+    return () => {
+      teardownSession()
+    }
+  }, [])
+
+  const teardownSession = () => {
+    const session = sessionRef.current
+    if (session) {
+      session.audioVideo.stop()
+      void session.audioVideo.stopAudioInput()
+      sessionRef.current = null
+    }
+
+    const videoStream = localVideoStreamRef.current
+    if (videoStream) {
+      videoStream.getTracks().forEach((track) => track.stop())
+      localVideoStreamRef.current = null
+    }
+
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null
+    }
   }
 
   const handleSendMessage = async () => {
-    if (!message.trim()) return
-    
+    if (!item?.valuable?.id || !item.qrCode.ownerId || !message.trim()) {
+      return
+    }
+
     setIsSubmitting(true)
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    setIsSubmitting(false)
-    setShowMessageDialog(false)
-    setShowSuccessDialog(true)
-    setMessage("")
-    setFinderContact("")
+    try {
+      await Promise.all([
+        runPublicGraphQL(createMessageMutation, {
+          input: {
+            valuableId: item.valuable.id,
+            ownerId: item.qrCode.ownerId,
+            finderContact: finderContact.trim() || null,
+            content: message.trim(),
+            channel: "IN_APP",
+            createdAt: new Date().toISOString(),
+            status: "NEW",
+          },
+        }),
+        runPublicGraphQL(createScanEventMutation, {
+          input: {
+            qrCodeId: item.qrCode.code,
+            valuableId: item.valuable.id,
+            ownerId: item.qrCode.ownerId,
+            scannedAt: new Date().toISOString(),
+            finderContact: finderContact.trim() || null,
+            finderMessage: message.trim(),
+            channel: "MESSAGE",
+          },
+        }),
+      ])
+
+      setShowMessageDialog(false)
+      setShowSuccessDialog(true)
+      setMessage("")
+      setFinderContact("")
+    } catch (error: any) {
+      setLoadError(error?.message || "Unable to send message")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const startCall = async (withVideo: boolean) => {
+    if (!item?.qrCode.ownerId) {
+      setCallError("This QR code is not linked to an owner yet")
+      return
+    }
+
+    const roomId = getOwnerRoomId(item.qrCode.ownerId)
+    if (!roomId) {
+      setCallError("Owner room was not available")
+      return
+    }
+
     setIsVideoCall(withVideo)
     setShowCallDialog(true)
     setCallState("connecting")
-    
+    setCallStatus("Connecting to owner...")
+    setCallError("")
+    setCallDuration(0)
+
     try {
-      // Request media permissions
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: withVideo
-      })
-      
-      streamRef.current = stream
-      
-      if (localVideoRef.current && withVideo) {
-        localVideoRef.current.srcObject = stream
+      if (withVideo) {
+        const previewStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        })
+        localVideoStreamRef.current = previewStream
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = previewStream
+        }
       }
-      
-      // Simulate connection delay
-      setTimeout(() => {
-        setCallState("ringing")
-      }, 1000)
-      
-      // Simulate answer after ringing
-      setTimeout(() => {
-        setCallState("connected")
-      }, 4000)
-      
-    } catch (error) {
-      console.error("Failed to get media:", error)
+
+      const response = await fetch("/api/calls/join", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomId,
+          userId: `finder-${crypto.randomUUID().slice(0, 12)}`,
+        }),
+      })
+
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(payload?.details?.[0]?.message || payload?.error || "Unable to join call")
+      }
+
+      const meeting = payload?.meeting ? (JSON.parse(payload.meeting) as MeetingResponse) : null
+      const attendee = payload?.attendee ? (JSON.parse(payload.attendee) as AttendeeResponse) : null
+      if (!meeting || !attendee) {
+        throw new Error("Meeting join response was incomplete")
+      }
+
+      const logger = new ConsoleLogger("ifound-finder-call", LogLevel.ERROR)
+      const deviceController = new DefaultDeviceController(logger)
+      const configuration = new MeetingSessionConfiguration(meeting, attendee)
+      const session = new DefaultMeetingSession(configuration, logger, deviceController)
+      sessionRef.current = session
+
+      const audioInputs = await session.audioVideo.listAudioInputDevices()
+      if (!audioInputs.length) {
+        throw new Error("No microphone detected")
+      }
+
+      await session.audioVideo.startAudioInput(audioInputs[0].deviceId)
+
+      if (!audioElementRef.current) {
+        throw new Error("Audio output element not ready")
+      }
+
+      audioElementRef.current.muted = !isSpeakerOn
+      session.audioVideo.bindAudioElement(audioElementRef.current)
+      session.audioVideo.start()
+
+      if (item.valuable?.id) {
+        await runPublicGraphQL(createScanEventMutation, {
+          input: {
+            qrCodeId: item.qrCode.code,
+            valuableId: item.valuable.id,
+            ownerId: item.qrCode.ownerId,
+            scannedAt: new Date().toISOString(),
+            finderContact: finderContact.trim() || null,
+            channel: "CALL",
+          },
+        })
+      }
+
+      setCallState("connected")
+      setCallStatus("Connected")
+      setIsMuted(false)
+      setIsVideoEnabled(withVideo)
+    } catch (error: any) {
+      teardownSession()
       setCallState("ended")
+      setCallStatus("Call failed")
+      setCallError(error?.message || "Unable to join call")
     }
   }
 
   const endCall = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-      streamRef.current = null
-    }
+    teardownSession()
     setCallState("ended")
+    setCallStatus("Call ended")
     setTimeout(() => {
       setShowCallDialog(false)
       setCallState("idle")
       setCallDuration(0)
       setIsMuted(false)
       setIsVideoEnabled(true)
-    }, 2000)
+      setCallError("")
+    }, 300)
   }
 
   const toggleMute = () => {
-    if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach(track => {
-        track.enabled = isMuted
-      })
+    const session = sessionRef.current
+    if (!session) return
+
+    if (isMuted) {
+      session.audioVideo.realtimeUnmuteLocalAudio()
+      setIsMuted(false)
+      return
     }
-    setIsMuted(!isMuted)
+
+    session.audioVideo.realtimeMuteLocalAudio()
+    setIsMuted(true)
   }
 
   const toggleVideo = () => {
-    if (streamRef.current) {
-      streamRef.current.getVideoTracks().forEach(track => {
-        track.enabled = !isVideoEnabled
-      })
+    if (!isVideoCall || !localVideoStreamRef.current) return
+
+    localVideoStreamRef.current.getVideoTracks().forEach((track) => {
+      track.enabled = !isVideoEnabled
+    })
+    setIsVideoEnabled((current) => !current)
+  }
+
+  const toggleSpeaker = () => {
+    const next = !isSpeakerOn
+    setIsSpeakerOn(next)
+    if (audioElementRef.current) {
+      audioElementRef.current.muted = !next
     }
-    setIsVideoEnabled(!isVideoEnabled)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="flex items-center gap-3 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Loading QR details...
+        </div>
+      </div>
+    )
+  }
+
+  if (loadError || !item) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="w-full max-w-md rounded-3xl border border-border/50 bg-card/70 p-8 text-center backdrop-blur-xl">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/15 text-destructive">
+            <QrCode className="h-7 w-7" />
+          </div>
+          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+            QR code unavailable
+          </h1>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {loadError || "We could not find the owner details for this QR code."}
+          </p>
+          <Button asChild className="mt-6 rounded-xl">
+            <Link href="/scan">Scan another code</Link>
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="relative min-h-screen flex items-center justify-center px-4 py-8">
-      {/* Background */}
+      <audio ref={audioElementRef} autoPlay playsInline />
+
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-40 left-1/2 -translate-x-1/2 h-[400px] w-[400px] rounded-full bg-accent/20 blur-[100px]" />
         <div className="absolute bottom-0 right-0 h-[300px] w-[300px] rounded-full bg-primary/15 blur-[80px]" />
@@ -170,9 +570,7 @@ export default function FoundItemPage() {
         transition={{ duration: 0.5 }}
         className="relative w-full max-w-md"
       >
-        {/* Main Card */}
-        <div className="relative rounded-3xl border border-border/50 bg-card/50 backdrop-blur-xl overflow-hidden">
-          {/* Header Gradient */}
+        <div className="relative overflow-hidden rounded-3xl border border-border/50 bg-card/50 backdrop-blur-xl">
           <div className="relative h-32 bg-gradient-to-br from-primary via-primary/80 to-accent">
             <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-20" />
             <div className="absolute inset-0 flex items-center justify-center">
@@ -180,118 +578,86 @@ export default function FoundItemPage() {
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
-                className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20"
+                className="flex h-20 w-20 items-center justify-center rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm"
               >
                 <QrCode className="h-10 w-10 text-white" />
               </motion.div>
             </div>
           </div>
 
-          {/* Content */}
           <div className="p-6">
-            {/* Status Badge */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="flex justify-center -mt-4 mb-6"
+              className="mb-6 flex justify-center -mt-4"
             >
-              <span className="inline-flex items-center gap-2 rounded-full bg-accent/20 border border-accent/30 px-4 py-2 text-sm text-accent">
+              <span className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/20 px-4 py-2 text-sm text-accent">
                 <span className="flex h-2 w-2 rounded-full bg-accent animate-pulse" />
                 This item belongs to someone
               </span>
             </motion.div>
 
-            {/* Item Info */}
-            <div className="text-center mb-8">
-              <h1 
-                className="text-2xl font-bold"
-                style={{ fontFamily: 'var(--font-display)' }}
-              >
-                {mockItem.name}
+            <div className="mb-8 text-center">
+              <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+                {item.valuable?.name || item.qrCode.label || "Registered item"}
               </h1>
-              <p className="mt-1 text-muted-foreground">{mockItem.category}</p>
-              
-              {mockItem.description && (
-                <p className="mt-4 text-sm text-muted-foreground bg-secondary/50 rounded-xl p-4">
-                  {mockItem.description}
-                </p>
-              )}
+              <p className="mt-1 text-muted-foreground">
+                {item.valuable?.category || "Lost and found item"}
+              </p>
 
-              {/* Reward Badge */}
-              {mockItem.hasReward && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.4 }}
-                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary/20 to-accent/20 border border-primary/30 px-5 py-2"
-                >
-                  <span className="text-sm text-muted-foreground">Reward offered:</span>
-                  <span className="font-semibold text-primary">{mockItem.reward}</span>
-                </motion.div>
-              )}
+              {item.valuable?.description ? (
+                <p className="mt-4 rounded-xl bg-secondary/50 p-4 text-sm text-muted-foreground">
+                  {item.valuable.description}
+                </p>
+              ) : null}
             </div>
 
-            {/* Action Buttons */}
             <div className="space-y-3">
-              {/* Video Call Button */}
-              {mockItem.allowsVideo && (
-                <Button
-                  onClick={() => startCall(true)}
-                  size="lg"
-                  className="w-full h-14 rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90 text-base gap-3"
-                >
-                  <Video className="h-5 w-5" />
-                  Video Call Owner
-                </Button>
-              )}
-              
-              {/* Audio Call Button */}
-              {mockItem.allowsCall && (
-                <Button
-                  onClick={() => startCall(false)}
-                  size="lg"
-                  variant={mockItem.allowsVideo ? "outline" : "default"}
-                  className={`w-full h-14 rounded-xl text-base gap-3 ${
-                    mockItem.allowsVideo 
-                      ? "border-border/50 bg-secondary/30 hover:bg-secondary/50" 
-                      : "bg-gradient-to-r from-accent to-accent/80 hover:opacity-90"
-                  }`}
-                >
-                  <Phone className="h-5 w-5" />
-                  Audio Call Owner
-                </Button>
-              )}
-              
-              {/* Message Button */}
+              <Button
+                onClick={() => void startCall(true)}
+                size="lg"
+                className="h-14 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 text-base gap-3 hover:opacity-90"
+              >
+                <Video className="h-5 w-5" />
+                Video Call Owner
+              </Button>
+
+              <Button
+                onClick={() => void startCall(false)}
+                size="lg"
+                variant="outline"
+                className="h-14 w-full rounded-xl border-border/50 bg-secondary/30 text-base gap-3 hover:bg-secondary/50"
+              >
+                <Phone className="h-5 w-5" />
+                Audio Call Owner
+              </Button>
+
               <Button
                 onClick={() => setShowMessageDialog(true)}
                 size="lg"
                 variant="outline"
-                className="w-full h-14 rounded-xl border-border/50 bg-secondary/30 hover:bg-secondary/50 text-base gap-3"
+                className="h-14 w-full rounded-xl border-border/50 bg-secondary/30 text-base gap-3 hover:bg-secondary/50"
               >
                 <MessageSquare className="h-5 w-5" />
                 Send Message
               </Button>
             </div>
 
-            {/* Owner Info */}
             <div className="mt-8 flex items-center justify-center gap-3 text-sm text-muted-foreground">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-xs font-semibold text-white">
-                {mockItem.ownerAvatar}
+                {ownerAvatar}
               </div>
-              <span>Owned by {mockItem.ownerName}</span>
+              <span>Owned by {ownerName}</span>
             </div>
 
-            {/* Privacy Info */}
             <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
               <MapPin className="h-3 w-3" />
               <span>Your location is not shared with the owner</span>
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="border-t border-border/50 px-6 py-4 bg-secondary/20">
+          <div className="border-t border-border/50 bg-secondary/20 px-6 py-4">
             <div className="flex items-center justify-center gap-2">
               <QrCode className="h-4 w-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">
@@ -305,51 +671,48 @@ export default function FoundItemPage() {
         </div>
       </motion.div>
 
-      {/* Message Dialog */}
       <Dialog open={showMessageDialog} onOpenChange={setShowMessageDialog}>
         <DialogContent className="sm:max-w-md rounded-2xl border-border/50 bg-card/95 backdrop-blur-xl">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: 'var(--font-display)' }}>
+            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>
               Send a message
             </DialogTitle>
             <DialogDescription>
               Let the owner know you found their item and how to reach you.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 pt-4">
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">
-                Your message
-              </label>
+              <label className="mb-2 block text-sm text-muted-foreground">Your message</label>
               <Textarea
                 placeholder="Hi, I found your item at..."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                className="min-h-[100px] rounded-xl bg-secondary/50 border-border/50 resize-none"
+                className="min-h-[100px] rounded-xl border-border/50 bg-secondary/50 resize-none"
               />
             </div>
-            
+
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">
+              <label className="mb-2 block text-sm text-muted-foreground">
                 Your contact (optional)
               </label>
               <Input
                 placeholder="Phone or email"
                 value={finderContact}
                 onChange={(e) => setFinderContact(e.target.value)}
-                className="h-12 rounded-xl bg-secondary/50 border-border/50"
+                className="h-12 rounded-xl border-border/50 bg-secondary/50"
               />
             </div>
-            
+
             <Button
-              onClick={handleSendMessage}
+              onClick={() => void handleSendMessage()}
               disabled={!message.trim() || isSubmitting}
-              className="w-full h-12 rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90"
+              className="h-12 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90"
             >
               {isSubmitting ? (
                 <span className="flex items-center gap-2">
-                  <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                   Sending...
                 </span>
               ) : (
@@ -363,9 +726,8 @@ export default function FoundItemPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Success Dialog */}
       <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
-        <DialogContent className="sm:max-w-sm rounded-2xl border-border/50 bg-card/95 backdrop-blur-xl text-center">
+        <DialogContent className="sm:max-w-sm rounded-2xl border-border/50 bg-card/95 text-center backdrop-blur-xl">
           <DialogHeader className="sr-only">
             <DialogTitle>Message sent</DialogTitle>
             <DialogDescription>
@@ -381,15 +743,15 @@ export default function FoundItemPage() {
             >
               <CheckCircle className="h-10 w-10 text-white" />
             </motion.div>
-            <h3 className="text-xl font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
-              Message Sent!
+            <h3 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+              Message Sent
             </h3>
             <p className="mt-2 text-muted-foreground">
-              The owner has been notified. They will contact you soon.
+              The owner has been notified. They can respond using the contact you shared.
             </p>
             <Button
               onClick={() => setShowSuccessDialog(false)}
-              className="mt-6 w-full h-12 rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90"
+              className="mt-6 h-12 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90"
             >
               Done
             </Button>
@@ -397,115 +759,62 @@ export default function FoundItemPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Call Dialog */}
-      <Dialog open={showCallDialog} onOpenChange={(open) => {
-        if (!open && callState !== "ended") {
-          endCall()
-        }
-      }}>
+      <Dialog
+        open={showCallDialog}
+        onOpenChange={(open) => {
+          if (!open && callState !== "ended") {
+            endCall()
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-lg p-0 rounded-2xl border-border/50 bg-card overflow-hidden">
           <DialogHeader className="sr-only">
             <DialogTitle>{isVideoCall ? "Video call with owner" : "Audio call with owner"}</DialogTitle>
-            <DialogDescription>
-              Ongoing finder to owner call session.
-            </DialogDescription>
+            <DialogDescription>Finder to owner live call session.</DialogDescription>
           </DialogHeader>
+
           <div className="relative">
-            {/* Video Area */}
             {isVideoCall ? (
               <div className="relative aspect-[4/3] bg-black">
-                {/* Remote Video (or placeholder) */}
-                {callState === "connected" ? (
-                  <video
-                    ref={remoteVideoRef}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-primary/20 to-accent/20">
-                    <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-3xl font-bold text-white mb-4">
-                      {mockItem.ownerAvatar}
-                    </div>
-                    <h3 className="text-xl font-semibold text-foreground">
-                      {mockItem.ownerName}
-                    </h3>
-                    <p className="mt-2 text-muted-foreground">
-                      {callState === "connecting" && "Connecting..."}
-                      {callState === "ringing" && "Ringing..."}
-                      {callState === "ended" && "Call ended"}
-                    </p>
-                    
-                    {callState === "ringing" && (
-                      <div className="mt-4 flex gap-2">
-                        <span className="h-3 w-3 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <span className="h-3 w-3 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <span className="h-3 w-3 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} />
-                      </div>
-                    )}
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-primary/20 to-accent/20">
+                  <div className="mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-3xl font-bold text-white">
+                    {ownerAvatar}
                   </div>
-                )}
-                
-                {/* Local Video (Picture-in-Picture) */}
-                {callState === "connected" && isVideoEnabled && (
-                  <div className="absolute bottom-4 right-4 w-32 aspect-[4/3] rounded-xl overflow-hidden border-2 border-white/20 shadow-lg">
+                  <h3 className="text-xl font-semibold text-foreground">{ownerName}</h3>
+                  <p className="mt-2 text-muted-foreground">
+                    {callState === "connecting" ? callStatus : callState === "connected" ? formatDuration(callDuration) : callStatus}
+                  </p>
+                  {callError ? <p className="mt-3 px-6 text-center text-sm text-destructive">{callError}</p> : null}
+                </div>
+
+                {callState === "connected" && isVideoEnabled ? (
+                  <div className="absolute bottom-4 right-4 w-32 overflow-hidden rounded-xl border-2 border-white/20 shadow-lg aspect-[4/3]">
                     <video
                       ref={localVideoRef}
                       autoPlay
                       playsInline
                       muted
-                      className="w-full h-full object-cover mirror"
+                      className="h-full w-full object-cover"
                     />
                   </div>
-                )}
-                
-                {/* Call Duration */}
-                {callState === "connected" && (
-                  <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm">
-                    <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-sm text-white font-mono">
-                      {formatDuration(callDuration)}
-                    </span>
-                  </div>
-                )}
+                ) : null}
               </div>
             ) : (
-              /* Audio Call UI */
-              <div className="relative py-16 px-8 flex flex-col items-center justify-center bg-gradient-to-br from-primary/20 to-accent/20">
-                <motion.div
-                  animate={callState === "ringing" ? { scale: [1, 1.1, 1] } : {}}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                  className="flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-4xl font-bold text-white mb-6"
-                >
-                  {mockItem.ownerAvatar}
-                </motion.div>
-                
-                <h3 className="text-xl font-semibold text-foreground">
-                  {mockItem.ownerName}
-                </h3>
-                
+              <div className="relative flex flex-col items-center justify-center bg-gradient-to-br from-primary/20 to-accent/20 px-8 py-16">
+                <div className="mb-6 flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-4xl font-bold text-white">
+                  {ownerAvatar}
+                </div>
+                <h3 className="text-xl font-semibold text-foreground">{ownerName}</h3>
                 <p className="mt-2 text-muted-foreground">
-                  {callState === "connecting" && "Connecting..."}
-                  {callState === "ringing" && "Ringing..."}
-                  {callState === "connected" && formatDuration(callDuration)}
-                  {callState === "ended" && "Call ended"}
+                  {callState === "connecting" ? callStatus : callState === "connected" ? formatDuration(callDuration) : callStatus}
                 </p>
-                
-                {callState === "ringing" && (
-                  <div className="mt-4 flex gap-2">
-                    <span className="h-3 w-3 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="h-3 w-3 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="h-3 w-3 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} />
-                  </div>
-                )}
+                {callError ? <p className="mt-3 text-center text-sm text-destructive">{callError}</p> : null}
               </div>
             )}
-            
-            {/* Call Controls */}
-            <div className="p-6 bg-card">
+
+            <div className="bg-card p-6">
               {callState !== "ended" ? (
                 <div className="flex items-center justify-center gap-4">
-                  {/* Mute Button */}
                   <Button
                     onClick={toggleMute}
                     size="icon"
@@ -514,9 +823,8 @@ export default function FoundItemPage() {
                   >
                     {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
                   </Button>
-                  
-                  {/* Video Toggle (only for video calls) */}
-                  {isVideoCall && (
+
+                  {isVideoCall ? (
                     <Button
                       onClick={toggleVideo}
                       size="icon"
@@ -525,9 +833,8 @@ export default function FoundItemPage() {
                     >
                       {isVideoEnabled ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
                     </Button>
-                  )}
-                  
-                  {/* End Call Button */}
+                  ) : null}
+
                   <Button
                     onClick={endCall}
                     size="icon"
@@ -536,37 +843,33 @@ export default function FoundItemPage() {
                   >
                     <PhoneOff className="h-7 w-7" />
                   </Button>
-                  
-                  {/* Speaker Button */}
+
                   <Button
+                    onClick={toggleSpeaker}
                     size="icon"
-                    variant="secondary"
+                    variant={isSpeakerOn ? "secondary" : "outline"}
                     className="h-14 w-14 rounded-full"
                   >
                     <Volume2 className="h-6 w-6" />
                   </Button>
-                  
-                  {/* Switch Camera (only for video calls) */}
-                  {isVideoCall && (
-                    <Button
-                      size="icon"
-                      variant="secondary"
-                      className="h-14 w-14 rounded-full"
-                    >
+
+                  {isVideoCall ? (
+                    <Button size="icon" variant="secondary" className="h-14 w-14 rounded-full" disabled>
                       <Camera className="h-6 w-6" />
                     </Button>
-                  )}
+                  ) : null}
                 </div>
               ) : (
                 <div className="text-center">
-                  <p className="text-muted-foreground mb-4">Call ended</p>
+                  <p className="mb-4 text-muted-foreground">{callError || "Call ended"}</p>
                   <Button
                     onClick={() => {
                       setShowCallDialog(false)
                       setCallState("idle")
                       setCallDuration(0)
+                      setCallError("")
                     }}
-                    className="h-12 px-8 rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90"
+                    className="h-12 rounded-xl bg-gradient-to-r from-primary to-primary/80 px-8 hover:opacity-90"
                   >
                     Close
                   </Button>

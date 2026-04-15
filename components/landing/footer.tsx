@@ -8,13 +8,13 @@ const footerLinks = {
     { label: "Features", href: "#features" },
     { label: "Pricing", href: "#pricing" },
     { label: "How It Works", href: "#how-it-works" },
-    { label: "FAQ", href: "#" },
+    //{ label: "FAQ", href: "#" },
   ],
   company: [
-    { label: "About", href: "#" },
-    { label: "Blog", href: "#" },
-    { label: "Careers", href: "#" },
-    { label: "Press", href: "#" },
+  //  { label: "About", href: "#" },
+   // { label: "Blog", href: "#" },
+  //  { label: "Careers", href: "#" },
+   // { label: "Press", href: "#" },
   ],
   resources: [
     { label: "Documentation", href: "#" },
@@ -23,9 +23,9 @@ const footerLinks = {
     { label: "Status", href: "#" },
   ],
   legal: [
-    { label: "Privacy", href: "#" },
-    { label: "Terms", href: "#" },
-    { label: "Cookies", href: "#" },
+    { label: "Privacy", href: "/privacy" },
+    { label: "Terms", href: "/terms" },
+    { label: "Cookies", href: "/privacy" },
   ],
 }
 
@@ -52,6 +52,17 @@ export function Footer() {
             </Link>
             <p className="mt-4 max-w-xs text-sm text-muted-foreground leading-relaxed">
               QR-powered smart recovery system for your valuables. Never lose what matters again.
+            </p>
+            <p className="mt-4 max-w-xs text-sm text-muted-foreground leading-relaxed">
+              Zestive Ventures
+              <br />
+              80 BAYSHORE ROAD #03-28 COSTA DEL SOL
+              <br />
+              Singapore 469992
+              <br />
+              <a href="mailto:developer@ifound.sg" className="text-primary hover:underline">
+                developer@ifound.sg
+              </a>
             </p>
             
             {/* Social Links */}
@@ -86,7 +97,7 @@ export function Footer() {
               </ul>
             </div>
 
-            <div>
+            {/*<div>
               <h3 className="text-sm font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
                 Company
               </h3>
@@ -114,7 +125,7 @@ export function Footer() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </div>*/}
 
             <div>
               <h3 className="text-sm font-semibold" style={{ fontFamily: 'var(--font-display)' }}>

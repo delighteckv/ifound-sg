@@ -1,10 +1,13 @@
 import { defineBackend } from "@aws-amplify/backend";
+import { Stack } from "aws-cdk-lib";
 import { auth } from "./auth/resource";
 import { data } from "./data/resource";
 import { storage } from "./storage/resource";
 import { chimeCreateMeeting } from "./functions/chime-create-meeting/resource";
 import { chimeJoinMeeting } from "./functions/chime-join-meeting/resource";
-import { PolicyStatement } from "aws-cdk-lib/aws-iam";
+import { analyticsAggregator } from "./functions/analytics-aggregator/resource";
+import { Effect, Policy, PolicyStatement } from "aws-cdk-lib/aws-iam";
+import { EventSourceMapping, StartingPosition } from "aws-cdk-lib/aws-lambda";
 import { postConfirmation } from "./functions/post-confirmation/resource";
 import { preSignup } from "./functions/pre-signup/resource";
 import { linkUserIdentity } from "./functions/link-user-identity/resource";
@@ -15,6 +18,7 @@ const backend = defineBackend({
   storage,
   chimeCreateMeeting,
   chimeJoinMeeting,
+  analyticsAggregator,
   postConfirmation,
   preSignup,
   linkUserIdentity,
@@ -105,3 +109,62 @@ backend.chimeJoinMeeting.resources.lambda.addEnvironment(
   "IFOUND_CHIME_MEETINGS_TABLE_NAME",
   meetingRoomTable.tableName,
 );
+
+const analyticsTable = backend.data.resources.tables["AnalyticsStats"];
+backend.analyticsAggregator.resources.lambda.addEnvironment(
+  "IFOUND_ANALYTICS_TABLE_NAME",
+  analyticsTable.tableName,
+);
+
+const analyticsStreamTables = [
+  "ScanEvent",
+  "Message",
+  "OwnerPayment",
+  "OwnerSubscription",
+] as const;
+
+const analyticsStreamPolicy = new Policy(
+  Stack.of(analyticsTable),
+  "AnalyticsAggregatorStreamPolicy",
+  {
+    statements: [
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          "dynamodb:DescribeStream",
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+          "dynamodb:ListStreams",
+        ],
+        resources: ["*"],
+      }),
+    ],
+  },
+);
+
+backend.analyticsAggregator.resources.lambda.role?.attachInlinePolicy(
+  analyticsStreamPolicy,
+);
+
+backend.analyticsAggregator.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: [
+      "dynamodb:UpdateItem",
+      "dynamodb:PutItem",
+      "dynamodb:GetItem",
+      "dynamodb:DescribeTable",
+    ],
+    resources: ["*"],
+  }),
+);
+
+for (const tableName of analyticsStreamTables) {
+  const table = backend.data.resources.tables[tableName];
+  if (!table?.tableStreamArn) continue;
+
+  new EventSourceMapping(Stack.of(table), `AnalyticsAggregator${tableName}Stream`, {
+    target: backend.analyticsAggregator.resources.lambda,
+    eventSourceArn: table.tableStreamArn,
+    startingPosition: StartingPosition.LATEST,
+  }).node.addDependency(analyticsStreamPolicy);
+}
