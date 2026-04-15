@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import {
   SidebarProvider,
@@ -40,6 +40,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { fetchAuthSession, signOut } from "aws-amplify/auth"
+import { syncCognitoAttributesFromToken } from "@/lib/auth-sync"
 
 const navItems = [
   {
@@ -51,7 +53,7 @@ const navItems = [
   {
     title: "Management",
     items: [
-      { title: "Users", href: "/dashboard/users", icon: Users },
+      { title: "Users", href: "/dashboard/users", icon: Users, adminOnly: true },
       { title: "QR Codes", href: "/dashboard/qr-codes", icon: QrCode },
       { title: "Scan Activity", href: "/dashboard/activity", icon: Activity },
     ],
@@ -76,6 +78,68 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const [user, setUser] = useState<{
+    email?: string
+    name?: string
+    groups?: string[]
+  } | null>(null)
+
+  const isAdmin = user?.groups?.includes("Admin") ?? false
+  const isOwner = user?.groups?.includes("Owner") ?? false
+
+  const filteredNav = useMemo(() => {
+    return navItems
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item: any) => !item.adminOnly || isAdmin),
+      }))
+      .filter((group) => group.items.length > 0)
+  }, [isAdmin])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      try {
+        const session = await fetchAuthSession()
+        const payload = session.tokens?.idToken?.payload
+        const groups = (payload?.["cognito:groups"] as string[] | undefined) ?? []
+        const email = payload?.email as string | undefined
+        const name = (payload?.name as string | undefined) ||
+          [payload?.given_name, payload?.family_name].filter(Boolean).join(" ").trim()
+
+        await syncCognitoAttributesFromToken()
+
+        if (!session.tokens?.idToken || (!groups.includes("Admin") && !groups.includes("Owner"))) {
+          router.replace("/login")
+          return
+        }
+
+        if (!groups.includes("Admin")) {
+          const adminOnlyRoutes = new Set(["/dashboard/users"])
+          if (adminOnlyRoutes.has(pathname)) {
+            router.replace("/dashboard")
+            return
+          }
+        }
+
+        if (active) {
+          setUser({ email, name, groups })
+        }
+      } catch {
+        router.replace("/login")
+      }
+    }
+    run()
+    return () => {
+      active = false
+    }
+  }, [pathname, router])
+
+  const handleSignOut = async () => {
+    await signOut()
+    router.replace("/login")
+  }
 
   return (
     <SidebarProvider>
@@ -92,7 +156,7 @@ export default function DashboardLayout({
         </SidebarHeader>
 
         <SidebarContent className="px-2 py-4">
-          {navItems.map((group) => (
+          {filteredNav.map((group) => (
             <SidebarGroup key={group.title}>
               <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground/70">
                 {group.title}
@@ -124,11 +188,11 @@ export default function DashboardLayout({
             <DropdownMenuTrigger asChild>
               <button className="flex w-full items-center gap-3 rounded-xl px-2 py-2 hover:bg-sidebar-accent transition-colors">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-semibold text-white">
-                  JD
+                  {(user?.name || user?.email || "U").slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1 text-left">
-                  <p className="text-sm font-medium">John Doe</p>
-                  <p className="text-xs text-muted-foreground">john@example.com</p>
+                  <p className="text-sm font-medium">{user?.name || "Signed in"}</p>
+                  <p className="text-xs text-muted-foreground">{user?.email || ""}</p>
                 </div>
                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
               </button>
@@ -139,7 +203,7 @@ export default function DashboardLayout({
                 Account Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="rounded-lg text-destructive">
+              <DropdownMenuItem className="rounded-lg text-destructive" onClick={handleSignOut}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Sign Out
               </DropdownMenuItem>

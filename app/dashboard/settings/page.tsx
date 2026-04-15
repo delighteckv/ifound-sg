@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,14 +19,225 @@ import {
   Smartphone,
   MessageSquare
 } from "lucide-react"
+import {
+  confirmUserAttribute,
+  confirmResetPassword,
+  fetchUserAttributes,
+  resetPassword,
+  signInWithRedirect,
+  signOut,
+  updateUserAttributes,
+} from "aws-amplify/auth"
 
 export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
+  const [accountLoading, setAccountLoading] = useState(false)
+  const [accountError, setAccountError] = useState("")
+  const [accountSuccess, setAccountSuccess] = useState("")
+  const [email, setEmail] = useState("")
+  const [draftEmail, setDraftEmail] = useState("")
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null)
+  const [emailCode, setEmailCode] = useState("")
+  const [showEmailVerify, setShowEmailVerify] = useState(false)
+  const [phone, setPhone] = useState("")
+  const [phoneVerified, setPhoneVerified] = useState<boolean | null>(null)
+  const [phoneCode, setPhoneCode] = useState("")
+  const [showPhoneVerify, setShowPhoneVerify] = useState(false)
+  const [linkedProviders, setLinkedProviders] = useState<string[]>([])
+  const [resetCode, setResetCode] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+
+  const isGoogleLinked = linkedProviders.includes("Google")
+  const isAppleLinked = linkedProviders.includes("SignInWithApple") || linkedProviders.includes("Apple")
 
   const handleSave = async () => {
     setIsSaving(true)
     await new Promise(resolve => setTimeout(resolve, 1500))
     setIsSaving(false)
+  }
+
+  const loadAccount = async () => {
+    setAccountLoading(true)
+    setAccountError("")
+    setAccountSuccess("")
+    try {
+      const attrs = await fetchUserAttributes()
+      const identitiesRaw = attrs.identities
+      const identities = identitiesRaw ? JSON.parse(identitiesRaw) : []
+      const providers = Array.isArray(identities)
+        ? identities.map((i: any) => i.providerName).filter(Boolean)
+        : []
+
+      setEmail(attrs.email ?? "")
+      setDraftEmail(attrs.email ?? "")
+      setEmailVerified(attrs.email_verified === "true")
+      setPhone(attrs.phone_number ?? "")
+      setPhoneVerified(attrs.phone_number_verified === "true")
+      setLinkedProviders(Array.from(new Set(providers)))
+    } catch (err: any) {
+      setAccountError(err?.message || "Unable to load account data")
+    } finally {
+      setAccountLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadAccount()
+  }, [])
+
+  const handleUpdatePhone = async () => {
+    setAccountLoading(true)
+    setAccountError("")
+    setAccountSuccess("")
+    try {
+      const result = await updateUserAttributes({
+        userAttributes: {
+          phone_number: phone,
+        },
+      })
+      const phoneStep = result.phone_number
+      setPhoneVerified(false)
+      setShowPhoneVerify(
+        phoneStep?.nextStep?.updateAttributeStep === "CONFIRM_ATTRIBUTE_WITH_CODE",
+      )
+      setAccountSuccess(
+        phoneStep?.nextStep?.updateAttributeStep === "CONFIRM_ATTRIBUTE_WITH_CODE"
+          ? "Verification code sent to your phone."
+          : "Phone number updated.",
+      )
+    } catch (err: any) {
+      setAccountError(err?.message || "Unable to update phone number")
+    } finally {
+      setAccountLoading(false)
+    }
+  }
+
+  const handleUpdateEmail = async () => {
+    if (!draftEmail) return
+    setAccountLoading(true)
+    setAccountError("")
+    setAccountSuccess("")
+    try {
+      const result = await updateUserAttributes({
+        userAttributes: {
+          email: draftEmail,
+        },
+      })
+      setEmail(draftEmail)
+      setEmailVerified(false)
+      const emailStep = result.email
+      setShowEmailVerify(
+        emailStep?.nextStep?.updateAttributeStep === "CONFIRM_ATTRIBUTE_WITH_CODE",
+      )
+      setAccountSuccess(
+        emailStep?.nextStep?.updateAttributeStep === "CONFIRM_ATTRIBUTE_WITH_CODE"
+          ? "Verification code sent to your email."
+          : "Email updated.",
+      )
+    } catch (err: any) {
+      setAccountError(err?.message || "Unable to update email")
+    } finally {
+      setAccountLoading(false)
+    }
+  }
+
+  const handleVerifyEmail = async () => {
+    if (!emailCode) return
+    setAccountLoading(true)
+    setAccountError("")
+    setAccountSuccess("")
+    try {
+      await confirmUserAttribute({
+        userAttributeKey: "email",
+        confirmationCode: emailCode,
+      })
+      setEmailVerified(true)
+      setShowEmailVerify(false)
+      setEmailCode("")
+      setAccountSuccess("Email verified.")
+      await loadAccount()
+    } catch (err: any) {
+      setAccountError(err?.message || "Invalid verification code")
+    } finally {
+      setAccountLoading(false)
+    }
+  }
+
+  const handleVerifyPhone = async () => {
+    if (!phoneCode) return
+    setAccountLoading(true)
+    setAccountError("")
+    setAccountSuccess("")
+    try {
+      await confirmUserAttribute({
+        userAttributeKey: "phone_number",
+        confirmationCode: phoneCode,
+      })
+      setPhoneVerified(true)
+      setShowPhoneVerify(false)
+      setPhoneCode("")
+      setAccountSuccess("Phone number verified.")
+      await loadAccount()
+    } catch (err: any) {
+      setAccountError(err?.message || "Invalid verification code")
+    } finally {
+      setAccountLoading(false)
+    }
+  }
+
+  const handleSendPasswordReset = async () => {
+    if (!email) return
+    setAccountLoading(true)
+    setAccountError("")
+    setAccountSuccess("")
+    try {
+      await resetPassword({ username: email })
+      setShowResetConfirm(true)
+      setAccountSuccess("Password reset code sent to your email.")
+    } catch (err: any) {
+      setAccountError(err?.message || "Unable to send password reset code")
+    } finally {
+      setAccountLoading(false)
+    }
+  }
+
+  const handleConfirmPasswordReset = async () => {
+    if (!email || !resetCode || !newPassword) return
+    setAccountLoading(true)
+    setAccountError("")
+    setAccountSuccess("")
+    try {
+      await confirmResetPassword({
+        username: email,
+        confirmationCode: resetCode,
+        newPassword,
+      })
+      setShowResetConfirm(false)
+      setResetCode("")
+      setNewPassword("")
+      setAccountSuccess("Password updated. You can now sign in with email.")
+    } catch (err: any) {
+      setAccountError(err?.message || "Unable to update password")
+    } finally {
+      setAccountLoading(false)
+    }
+  }
+
+  const handleLinkGoogle = async () => {
+    setAccountError("")
+    setAccountSuccess("")
+    localStorage.setItem("ifound_post_link_redirect", "/dashboard/settings")
+    await signOut()
+    await signInWithRedirect({ provider: "Google" })
+  }
+
+  const handleLinkApple = async () => {
+    setAccountError("")
+    setAccountSuccess("")
+    localStorage.setItem("ifound_post_link_redirect", "/dashboard/settings")
+    await signOut()
+    await signInWithRedirect({ provider: "Apple" })
   }
 
   return (
@@ -53,8 +264,12 @@ export default function SettingsPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Tabs defaultValue="branding" className="space-y-6">
+        <Tabs defaultValue="account" className="space-y-6">
           <TabsList className="bg-secondary/50 rounded-xl p-1">
+            <TabsTrigger value="account" className="rounded-lg data-[state=active]:bg-background">
+              <Shield className="mr-2 h-4 w-4" />
+              Account
+            </TabsTrigger>
             <TabsTrigger value="branding" className="rounded-lg data-[state=active]:bg-background">
               <Palette className="mr-2 h-4 w-4" />
               Branding
@@ -72,6 +287,201 @@ export default function SettingsPage() {
               Organization
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="account" className="space-y-6">
+            <div className="rounded-2xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">
+              <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: "var(--font-display)" }}>
+                Account Settings
+              </h3>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    value={draftEmail}
+                    onChange={(e) => setDraftEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="h-11 rounded-xl bg-secondary/50 border-border/50"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {emailVerified ? "Email verified" : "Email not verified"}
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      className="rounded-xl border-border/50"
+                      onClick={handleUpdateEmail}
+                      disabled={accountLoading || !draftEmail}
+                    >
+                      {email ? "Update Email" : "Add Email"}
+                    </Button>
+                    {!emailVerified && !email && (
+                      <span className="text-xs text-amber-600">
+                        Google did not provide email. Add one to enable email sign-in and recovery.
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {showEmailVerify && (
+                  <div className="space-y-2">
+                    <Label>Verify Email</Label>
+                    <div className="flex gap-3">
+                      <Input
+                        value={emailCode}
+                        onChange={(e) => setEmailCode(e.target.value)}
+                        placeholder="Enter code"
+                        className="h-11 rounded-xl bg-secondary/50 border-border/50"
+                      />
+                      <Button
+                        onClick={handleVerifyEmail}
+                        className="rounded-xl"
+                        disabled={accountLoading || emailCode.length < 4}
+                      >
+                        Verify
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Phone Number</Label>
+                  <Input
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+1 555 000 0000"
+                    className="h-11 rounded-xl bg-secondary/50 border-border/50"
+                  />
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      className="rounded-xl border-border/50"
+                      onClick={handleUpdatePhone}
+                      disabled={accountLoading || !phone}
+                    >
+                      {phoneVerified ? "Update Phone" : "Add Phone"}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {phoneVerified ? "Verified" : "Not verified"}
+                    </span>
+                  </div>
+                </div>
+
+                {showPhoneVerify && (
+                  <div className="space-y-2">
+                    <Label>Verify Phone</Label>
+                    <div className="flex gap-3">
+                      <Input
+                        value={phoneCode}
+                        onChange={(e) => setPhoneCode(e.target.value)}
+                        placeholder="Enter code"
+                        className="h-11 rounded-xl bg-secondary/50 border-border/50"
+                      />
+                      <Button
+                        onClick={handleVerifyPhone}
+                        className="rounded-xl"
+                        disabled={accountLoading || phoneCode.length < 4}
+                      >
+                        Verify
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3 pt-4 border-t border-border/50">
+                  <Label>Linked Providers</Label>
+                  <div className="flex flex-wrap gap-2 text-sm">
+                    {linkedProviders.length === 0 && (
+                      <span className="text-muted-foreground">None linked yet</span>
+                    )}
+                    {linkedProviders.map((p) => (
+                      <span key={p} className="rounded-full border border-border/50 px-3 py-1">
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    {isGoogleLinked ? (
+                      <span className="rounded-xl border border-border/50 bg-secondary/30 px-4 py-2 text-sm">
+                        Linked With Google
+                      </span>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        className="rounded-xl border-border/50"
+                        onClick={handleLinkGoogle}
+                      >
+                        Link Google
+                      </Button>
+                    )}
+                    {isAppleLinked ? (
+                      <span className="rounded-xl border border-border/50 bg-secondary/30 px-4 py-2 text-sm">
+                        Linked With Apple
+                      </span>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        className="rounded-xl border-border/50"
+                        onClick={handleLinkApple}
+                      >
+                        Link Apple
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    We will link providers to your account by matching email or phone.
+                  </p>
+                </div>
+
+                {accountError && (
+                  <p className="text-sm text-destructive">{accountError}</p>
+                )}
+                {accountSuccess && (
+                  <p className="text-sm text-green-600">{accountSuccess}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">
+              <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: "var(--font-display)" }}>
+                Password
+              </h3>
+              <div className="space-y-3">
+                <Button
+                  variant="outline"
+                  className="rounded-xl border-border/50"
+                  onClick={handleSendPasswordReset}
+                  disabled={accountLoading || !email}
+                >
+                  Send Password Reset Code
+                </Button>
+                {showResetConfirm && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Input
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value)}
+                      placeholder="Reset code"
+                      className="h-11 rounded-xl bg-secondary/50 border-border/50"
+                    />
+                    <Input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="New password"
+                      className="h-11 rounded-xl bg-secondary/50 border-border/50"
+                    />
+                    <Button
+                      className="rounded-xl md:col-span-2"
+                      onClick={handleConfirmPasswordReset}
+                      disabled={accountLoading || !resetCode || !newPassword}
+                    >
+                      Confirm New Password
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </TabsContent>
 
           <TabsContent value="branding" className="space-y-6">
             <div className="rounded-2xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">

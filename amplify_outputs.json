@@ -1,9 +1,9 @@
 {
   "auth": {
-    "user_pool_id": "ap-south-1_OUl1lyxyK",
+    "user_pool_id": "ap-south-1_qK51jJfIj",
     "aws_region": "ap-south-1",
-    "user_pool_client_id": "65480h312kne6pu1u60j6otmnv",
-    "identity_pool_id": "ap-south-1:90ecc5c5-4858-403e-8f5e-6cd477dc189a",
+    "user_pool_client_id": "6utb4774ct43porgokqigue3qb",
+    "identity_pool_id": "ap-south-1:d7e728fd-a3cb-4dd4-bf05-2d1c9fbbf331",
     "mfa_methods": [],
     "standard_required_attributes": [],
     "username_attributes": [
@@ -54,10 +54,10 @@
       ],
       "response_type": "code",
       "scopes": [
-        "phone",
-        "email",
         "openid",
+        "email",
         "profile",
+        "phone",
         "aws.cognito.signin.user.admin"
       ],
       "domain": "47c13c46aba7e13647b6.auth.ap-south-1.amazoncognito.com"
@@ -70,9 +70,9 @@
     }
   },
   "data": {
-    "url": "https://zurcflbh4bdjpnhnajki7je36i.appsync-api.ap-south-1.amazonaws.com/graphql",
+    "url": "https://fkg5rlgv3zg2tjbchd3n25im4m.appsync-api.ap-south-1.amazonaws.com/graphql",
     "aws_region": "ap-south-1",
-    "api_key": "da2-nfdsyoej45gune5ko5tcrxyjhm",
+    "api_key": "da2-e2a3hbyghzdffo4bqvu3uwyvwu",
     "default_authorization_type": "API_KEY",
     "authorization_types": [
       "AMAZON_COGNITO_USER_POOLS",
@@ -118,6 +118,21 @@
               "type": "String",
               "isRequired": false,
               "attributes": []
+            },
+            "displayName": {
+              "name": "displayName",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "providers": {
+              "name": "providers",
+              "isArray": true,
+              "type": "String",
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true
             },
             "role": {
               "name": "role",
@@ -1369,6 +1384,33 @@
               "attributes": []
             }
           }
+        },
+        "SyncUserResult": {
+          "name": "SyncUserResult",
+          "fields": {
+            "userId": {
+              "name": "userId",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "action": {
+              "name": "action",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "providers": {
+              "name": "providers",
+              "isArray": true,
+              "type": "String",
+              "isRequired": false,
+              "attributes": [],
+              "isArrayNullable": true
+            }
+          }
         }
       },
       "mutations": {
@@ -1409,17 +1451,25 @@
               "isRequired": false
             }
           }
+        },
+        "syncUserIdentity": {
+          "name": "syncUserIdentity",
+          "isArray": false,
+          "type": {
+            "nonModel": "SyncUserResult"
+          },
+          "isRequired": false
         }
       }
     }
   },
   "storage": {
     "aws_region": "ap-south-1",
-    "bucket_name": "amplify-myproject-ifound--ifounduploadsbucket113df-ijm0viqryoxq",
+    "bucket_name": "amplify-myproject-ifound--ifounduploadsbucket113df-wqlmdqeoagul",
     "buckets": [
       {
         "name": "ifound-uploads",
-        "bucket_name": "amplify-myproject-ifound--ifounduploadsbucket113df-ijm0viqryoxq",
+        "bucket_name": "amplify-myproject-ifound--ifounduploadsbucket113df-wqlmdqeoagul",
         "aws_region": "ap-south-1",
         "paths": {
           "public/*": {

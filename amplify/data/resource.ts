@@ -5,6 +5,7 @@ import {
 } from "@aws-amplify/backend";
 import { chimeCreateMeeting } from "../functions/chime-create-meeting/resource";
 import { chimeJoinMeeting } from "../functions/chime-join-meeting/resource";
+import { linkUserIdentity } from "../functions/link-user-identity/resource";
 
 const UserRole = ["OWNER", "ADMIN"] as const;
 const UserStatus = ["PENDING", "ACTIVE", "INACTIVE"] as const;
@@ -24,6 +25,8 @@ const schema = a.schema({
       phone: a.string(),
       firstName: a.string(),
       lastName: a.string(),
+      displayName: a.string(),
+      providers: a.string().array(),
       role: a.enum(UserRole),
       status: a.enum(UserStatus),
       primaryContact: a.string(),
@@ -184,6 +187,12 @@ const schema = a.schema({
     attendee: a.string(),
   }),
 
+  SyncUserResult: a.customType({
+    userId: a.string(),
+    action: a.string(),
+    providers: a.string().array(),
+  }),
+
   chimeCreateMeeting: a
     .mutation()
     .arguments({
@@ -202,6 +211,12 @@ const schema = a.schema({
     .returns(a.ref("ChimeJoinResult"))
     .authorization((allow) => [allow.publicApiKey()])
     .handler(a.handler.function(chimeJoinMeeting)),
+
+  syncUserIdentity: a
+    .mutation()
+    .returns(a.ref("SyncUserResult"))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(linkUserIdentity)),
 });
 
 export type Schema = ClientSchema<typeof schema>;
