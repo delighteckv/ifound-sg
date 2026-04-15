@@ -190,7 +190,6 @@ export default function CallsPage() {
 
       session.audioVideo.realtimeSubscribeToAttendeeIdPresence(handlePresenceChange)
       session.audioVideo.start()
-      session.audioVideo.startLocalAudio()
       pushLog("Audio session started")
 
       setDisplayRoomId(targetRoomId)
