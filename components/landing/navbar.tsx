@@ -44,7 +44,7 @@ export function Navbar() {
             <QrCode className="h-5 w-5 text-primary-foreground" />
           </div>
           <span className="text-xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
-            FindR
+            iFound
           </span>
         </Link>
 

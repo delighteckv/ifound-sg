@@ -14,6 +14,7 @@ import {
 const appid = process.env.APPLICATION_ID_FOR_TABLE;
 const platform = process.env.PLATFORM_FOR_TABLE;
 const CHIME_MEETINGS_TABLE_NAME =
+  process.env.IFOUND_CHIME_MEETINGS_TABLE_NAME ||
   process.env.CHIME_MEETINGS_TABLE_NAME ||
   (appid && platform ? `MeetingRoom-${appid}-${platform}` : "");
 
@@ -49,16 +50,19 @@ function chimeClient() {
 
 function dynamoClient() {
   const region = process.env.AWS_REGION || "ap-south-1";
+  console.log("dynamoClient region:", region);
   return new DynamoDBClient({ region });
 }
 
 function tableName() {
   const name = CHIME_MEETINGS_TABLE_NAME;
   if (!name) throw new Error("Missing env CHIME_MEETINGS_TABLE_NAME");
+  console.log("resolved CHIME_MEETINGS_TABLE_NAME:", name);
   return name;
 }
 
 async function getStoredMeeting(roomId: string): Promise<StoredMeeting | null> {
+  console.log("getStoredMeeting start", { roomId });
   const res = await dynamoClient().send(
     new GetItemCommand({
       TableName: tableName(),
@@ -92,6 +96,7 @@ async function putStoredMeeting(roomId: string, meeting: any, ttl: number) {
   const now = new Date();
   const expiresAt = Math.floor(now.getTime() / 1000) + ttl;
 
+  console.log("putStoredMeeting start", { roomId, meetingId, ttl });
   await dynamoClient().send(
     new PutItemCommand({
       TableName: tableName(),
@@ -108,6 +113,14 @@ async function putStoredMeeting(roomId: string, meeting: any, ttl: number) {
 
 export const handler: Handler = async (event) => {
   console.log("event input:", JSON.stringify(event));
+  console.log("env snapshot:", {
+    AWS_REGION: process.env.AWS_REGION,
+    CHIME_MEETINGS_REGION: process.env.CHIME_MEETINGS_REGION,
+    IFOUND_CHIME_MEETINGS_TABLE_NAME: process.env.IFOUND_CHIME_MEETINGS_TABLE_NAME,
+    CHIME_MEETINGS_TABLE_NAME: process.env.CHIME_MEETINGS_TABLE_NAME,
+    APPLICATION_ID_FOR_TABLE: process.env.APPLICATION_ID_FOR_TABLE,
+    PLATFORM_FOR_TABLE: process.env.PLATFORM_FOR_TABLE,
+  });
 
   try {
     const roomId = event.arguments?.roomId;

@@ -13,3 +13,18 @@ GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
 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
 
+
+
+amplify-myproject-ifound--chimeCreateMeetinglambda-LeWMnq7ueKra
+
+
+
+APPLICATION_ID_FOR_TABLE
+PLATFORM_FOR_TABLE          NONE
+CHIME_MEDIA_REGION          ap-south-1
+CHIME_MEETINGS_REGION       ap-south-1
+CHIME_MEETINGS_TABLE_NAME   MeetingRoom
+CHIME_MEETING_TTL_SECONDS   14400
+
+
+npx ampx sandbox secret set PLATFORM_FOR_TABLE 

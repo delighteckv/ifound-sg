@@ -297,7 +297,7 @@ export default function FoundItemPage() {
               <span className="text-xs text-muted-foreground">
                 Powered by{" "}
                 <Link href="/" className="text-primary hover:underline">
-                  FindR
+                  iFound
                 </Link>
               </span>
             </div>
@@ -366,6 +366,12 @@ export default function FoundItemPage() {
       {/* Success Dialog */}
       <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
         <DialogContent className="sm:max-w-sm rounded-2xl border-border/50 bg-card/95 backdrop-blur-xl text-center">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Message sent</DialogTitle>
+            <DialogDescription>
+              Confirmation that your finder message was sent to the owner.
+            </DialogDescription>
+          </DialogHeader>
           <div className="py-6">
             <motion.div
               initial={{ scale: 0 }}
@@ -398,6 +404,12 @@ export default function FoundItemPage() {
         }
       }}>
         <DialogContent className="sm:max-w-lg p-0 rounded-2xl border-border/50 bg-card overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{isVideoCall ? "Video call with owner" : "Audio call with owner"}</DialogTitle>
+            <DialogDescription>
+              Ongoing finder to owner call session.
+            </DialogDescription>
+          </DialogHeader>
           <div className="relative">
             {/* Video Area */}
             {isVideoCall ? (

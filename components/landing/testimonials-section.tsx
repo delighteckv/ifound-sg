@@ -7,14 +7,14 @@ const testimonials = [
   {
     name: "Sarah Mitchell",
     role: "Travel Blogger",
-    content: "I lost my luggage at the airport and someone found it within hours thanks to FindR. The QR code made it so easy for them to contact me. Absolutely life-saving!",
+    content: "I lost my luggage at the airport and someone found it within hours thanks to iFound. The QR code made it so easy for them to contact me. Absolutely life-saving!",
     avatar: "SM",
     rating: 5,
   },
   {
     name: "Michael Chen",
     role: "Tech Entrepreneur",
-    content: "As someone who constantly loses things, FindR has been a game-changer. I&apos;ve recovered my AirPods, wallet, and keys - all through the simple QR system.",
+    content: "As someone who constantly loses things, iFound has been a game-changer. I&apos;ve recovered my AirPods, wallet, and keys - all through the simple QR system.",
     avatar: "MC",
     rating: 5,
   },
@@ -28,7 +28,7 @@ const testimonials = [
   {
     name: "David Park",
     role: "Dog Owner",
-    content: "Our dog Max ran away and someone found him miles away. They scanned his collar QR code and we were reunited within an hour. Thank you FindR!",
+    content: "Our dog Max ran away and someone found him miles away. They scanned his collar QR code and we were reunited within an hour. Thank you iFound!",
     avatar: "DP",
     rating: 5,
   },
@@ -42,7 +42,7 @@ const testimonials = [
   {
     name: "James Wilson",
     role: "Photographer",
-    content: "My camera equipment is my livelihood. FindR gives me peace of mind knowing that if anything gets lost, I have the best chance of getting it back.",
+    content: "My camera equipment is my livelihood. iFound gives me peace of mind knowing that if anything gets lost, I have the best chance of getting it back.",
     avatar: "JW",
     rating: 5,
   },

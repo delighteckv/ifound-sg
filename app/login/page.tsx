@@ -25,7 +25,7 @@ type AuthMode = "signin" | "signup"
 type AuthMethod = "email" | "phone"
 
 const detectMethod = (value: string): AuthMethod => {
-  if (!value.trim()) return "phone"
+  if (!value.trim()) return "email"
   return /[A-Za-z@]/.test(value) ? "email" : "phone"
 }
 
@@ -33,7 +33,7 @@ export default function LoginPage() {
   const router = useRouter()
   const [step, setStep] = useState<AuthStep>("phone")
   const [mode, setMode] = useState<AuthMode>("signin")
-  const [method, setMethod] = useState<AuthMethod>("phone")
+  const [method, setMethod] = useState<AuthMethod>("email")
   const [identifier, setIdentifier] = useState("")
   const [countryCode, setCountryCode] = useState("+91")
   const [password, setPassword] = useState("")
@@ -47,6 +47,7 @@ export default function LoginPage() {
   const [accountExists, setAccountExists] = useState(false)
   const [accountExistsMessage, setAccountExistsMessage] = useState("")
   const lastOtpSubmitted = useRef<string | null>(null)
+  const identifierInputRef = useRef<HTMLInputElement | null>(null)
 
   const routeByGroup = async () => {
     const session = await fetchAuthSession()
@@ -125,7 +126,7 @@ export default function LoginPage() {
       return
     }
 
-    setIdentifier(value.trim())
+    setIdentifier(value.trim().toLowerCase())
   }
 
   const getPhoneValue = () => `${countryCode}${identifier}`.replace(/\s+/g, "")
@@ -346,6 +347,20 @@ export default function LoginPage() {
     setError("")
   }
 
+  const handleContinueWithEmail = () => {
+    setMode("signup")
+    setMethod("email")
+    setIdentifier("")
+    setPassword("")
+    setConfirmPassword("")
+    setError("")
+    setAccountExists(false)
+    setAccountExistsMessage("")
+    requestAnimationFrame(() => {
+      identifierInputRef.current?.focus()
+    })
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-background px-4 py-10">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -378,7 +393,7 @@ export default function LoginPage() {
               </div>
             </div>
             <p className="text-2xl font-bold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-              FindR
+              iFound
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
               {step === "otp"
@@ -416,35 +431,47 @@ export default function LoginPage() {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="flex gap-2">
-                    {method === "phone" && (
-                      <select
-                        value={countryCode}
-                        onChange={(e) => setCountryCode(e.target.value)}
-                        className="h-14 rounded-xl border border-border/50 bg-secondary/50 px-3 text-sm"
-                      >
-                        <option value="+91">+91 India</option>
-                        <option value="+65">+65 Singapore</option>
-                      </select>
-                    )}
-
-                    <div className="relative flex-1">
-                      {method === "phone" && (
-                        <div className="absolute left-4 top-1/2 flex -translate-y-1/2 items-center text-muted-foreground">
-                          <Phone className="h-4 w-4" />
-                        </div>
-                      )}
-                      <Input
-                        type={method === "email" ? "email" : "tel"}
-                        placeholder="Email or phone number"
-                        value={identifier}
-                        onChange={(e) => handleIdentifierChange(e.target.value)}
-                        onKeyDown={handlePrimaryKeyDown}
-                        className={`h-14 rounded-xl border-border/50 bg-secondary/50 text-lg focus:border-primary focus:ring-primary ${
-                          method === "phone" ? "pl-12" : ""
-                        }`}
-                      />
+                  <div className="relative">
+                    <div
+                      className={`absolute inset-y-0 left-0 z-10 flex items-center transition-all ${
+                        method === "phone"
+                          ? "pointer-events-auto opacity-100"
+                          : "pointer-events-none opacity-0"
+                      }`}
+                    >
+                      <div className="ml-2 flex h-10 items-center gap-2 rounded-xl border border-border/50 bg-secondary/80 px-2">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <select
+                          value={countryCode}
+                          onChange={(e) => setCountryCode(e.target.value)}
+                          className="h-10 w-24 bg-transparent text-sm outline-none"
+                          tabIndex={method === "phone" ? 0 : -1}
+                        >
+                          <option value="+91">+91 India</option>
+                          <option value="+65">+65 Singapore</option>
+                        </select>
+                      </div>
                     </div>
+
+                    <Input
+                      type="text"
+                      inputMode={method === "phone" ? "numeric" : "email"}
+                      ref={identifierInputRef}
+                      name="ifound-identifier"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      data-1p-ignore="true"
+                      data-lpignore="true"
+                      placeholder="Email or phone number"
+                      value={identifier}
+                      onChange={(e) => handleIdentifierChange(e.target.value)}
+                      onKeyDown={handlePrimaryKeyDown}
+                      className={`h-14 rounded-xl border-border/50 bg-secondary/50 text-lg focus:border-primary focus:ring-primary ${
+                        method === "phone" ? "pl-40" : ""
+                      }`}
+                    />
                   </div>
 
                   <p className="text-xs text-muted-foreground">
@@ -553,12 +580,21 @@ export default function LoginPage() {
                 </div>
 
                 <div className="mt-6 flex items-center justify-center">
-                  <Link
-                    href="/scan"
-                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Continue as Guest
-                  </Link>
+                  <div className="flex flex-col items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleContinueWithEmail}
+                      className="text-sm text-primary transition-colors hover:underline"
+                    >
+                      Continue with Email
+                    </button>
+                    <Link
+                      href="/scan"
+                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      Continue as Guest
+                    </Link>
+                  </div>
                 </div>
               </motion.div>
             ) : (

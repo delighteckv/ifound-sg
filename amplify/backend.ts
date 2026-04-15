@@ -67,6 +67,7 @@ backend.postConfirmation.resources.lambda.addToRolePolicy(
 backend.preSignup.resources.lambda.addToRolePolicy(
   new PolicyStatement({
     actions: [
+      "cognito-idp:AdminGetUser",
       "cognito-idp:ListUsers",
       "cognito-idp:AdminLinkProviderForUser",
       "cognito-idp:AdminUpdateUserAttributes",
@@ -97,10 +98,10 @@ backend.linkUserIdentity.resources.lambda.addEnvironment(
 
 const meetingRoomTable = backend.data.resources.tables["MeetingRoom"];
 backend.chimeCreateMeeting.resources.lambda.addEnvironment(
-  "CHIME_MEETINGS_TABLE_NAME",
+  "IFOUND_CHIME_MEETINGS_TABLE_NAME",
   meetingRoomTable.tableName,
 );
 backend.chimeJoinMeeting.resources.lambda.addEnvironment(
-  "CHIME_MEETINGS_TABLE_NAME",
+  "IFOUND_CHIME_MEETINGS_TABLE_NAME",
   meetingRoomTable.tableName,
 );

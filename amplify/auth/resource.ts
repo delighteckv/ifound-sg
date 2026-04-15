@@ -14,7 +14,7 @@ export const auth = defineAuth({
       otpLogin: true,
     },
     externalProviders: {
-      scopes: ["OPENID", "EMAIL", "PROFILE", "PHONE", "COGNITO_ADMIN"],
+      scopes: ["PROFILE"],
       callbackUrls: [
         "http://localhost:3000/login",
         "http://127.0.0.1:3000/login",
@@ -33,6 +33,7 @@ export const auth = defineAuth({
         clientId: secret("GOOGLE_CLIENT_ID"),
         clientSecret: secret("GOOGLE_CLIENT_SECRET"),
         attributeMapping: {
+          emailVerified: "email_verified",
           email: "email",
           givenName: "given_name",
           familyName: "family_name",

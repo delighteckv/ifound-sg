@@ -1,9 +1,9 @@
 {
   "auth": {
-    "user_pool_id": "ap-south-1_qK51jJfIj",
+    "user_pool_id": "ap-south-1_gFtiNQY1y",
     "aws_region": "ap-south-1",
-    "user_pool_client_id": "6utb4774ct43porgokqigue3qb",
-    "identity_pool_id": "ap-south-1:d7e728fd-a3cb-4dd4-bf05-2d1c9fbbf331",
+    "user_pool_client_id": "13rqn1a3hl518id036fo6s1ce8",
+    "identity_pool_id": "ap-south-1:56b94784-6eb6-4ee5-b0a6-1926705708bc",
     "mfa_methods": [],
     "standard_required_attributes": [],
     "username_attributes": [
@@ -54,11 +54,8 @@
       ],
       "response_type": "code",
       "scopes": [
-        "openid",
-        "email",
         "profile",
-        "phone",
-        "aws.cognito.signin.user.admin"
+        "openid"
       ],
       "domain": "47c13c46aba7e13647b6.auth.ap-south-1.amazoncognito.com"
     },
@@ -70,9 +67,9 @@
     }
   },
   "data": {
-    "url": "https://fkg5rlgv3zg2tjbchd3n25im4m.appsync-api.ap-south-1.amazonaws.com/graphql",
+    "url": "https://oylf6yqtzbdedhops7cgdq5pmu.appsync-api.ap-south-1.amazonaws.com/graphql",
     "aws_region": "ap-south-1",
-    "api_key": "da2-e2a3hbyghzdffo4bqvu3uwyvwu",
+    "api_key": "da2-aldgrj6pdjc5boz5ok2vdjqkeu",
     "default_authorization_type": "API_KEY",
     "authorization_types": [
       "AMAZON_COGNITO_USER_POOLS",
@@ -1465,11 +1462,11 @@
   },
   "storage": {
     "aws_region": "ap-south-1",
-    "bucket_name": "amplify-myproject-ifound--ifounduploadsbucket113df-wqlmdqeoagul",
+    "bucket_name": "amplify-myproject-ifound--ifounduploadsbucket113df-m9uflyov1bo8",
     "buckets": [
       {
         "name": "ifound-uploads",
-        "bucket_name": "amplify-myproject-ifound--ifounduploadsbucket113df-wqlmdqeoagul",
+        "bucket_name": "amplify-myproject-ifound--ifounduploadsbucket113df-m9uflyov1bo8",
         "aws_region": "ap-south-1",
         "paths": {
           "public/*": {

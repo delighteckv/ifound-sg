@@ -199,7 +199,7 @@ const schema = a.schema({
       roomId: a.string(),
     })
     .returns(a.ref("ChimeMeetingResult"))
-    .authorization((allow) => [allow.publicApiKey()])
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()])
     .handler(a.handler.function(chimeCreateMeeting)),
 
   chimeJoinMeeting: a
@@ -209,7 +209,7 @@ const schema = a.schema({
       userId: a.string(),
     })
     .returns(a.ref("ChimeJoinResult"))
-    .authorization((allow) => [allow.publicApiKey()])
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()])
     .handler(a.handler.function(chimeJoinMeeting)),
 
   syncUserIdentity: a

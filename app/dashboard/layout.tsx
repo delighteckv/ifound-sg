@@ -26,6 +26,7 @@ import {
   Activity,
   CreditCard,
   Settings,
+  PhoneCall,
   LogOut,
   Bell,
   Search,
@@ -56,6 +57,7 @@ const navItems = [
       { title: "Users", href: "/dashboard/users", icon: Users, adminOnly: true },
       { title: "QR Codes", href: "/dashboard/qr-codes", icon: QrCode },
       { title: "Scan Activity", href: "/dashboard/activity", icon: Activity },
+      { title: "Calls", href: "/dashboard/calls", icon: PhoneCall },
     ],
   },
   {
@@ -150,7 +152,7 @@ export default function DashboardLayout({
               <QrCode className="h-5 w-5 text-white" />
             </div>
             <span className="text-xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
-              FindR
+              iFound
             </span>
           </Link>
         </SidebarHeader>

@@ -299,7 +299,7 @@ export default function SettingsPage() {
                   <Label>Email</Label>
                   <Input
                     value={draftEmail}
-                    onChange={(e) => setDraftEmail(e.target.value)}
+                    onChange={(e) => setDraftEmail(e.target.value.trim().toLowerCase())}
                     placeholder="name@example.com"
                     className="h-11 rounded-xl bg-secondary/50 border-border/50"
                   />
@@ -494,14 +494,14 @@ export default function SettingsPage() {
                   <div className="space-y-2">
                     <Label>Company Name</Label>
                     <Input 
-                      defaultValue="FindR Inc." 
+                      defaultValue="iFound Inc." 
                       className="h-11 rounded-xl bg-secondary/50 border-border/50"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Support Email</Label>
                     <Input 
-                      defaultValue="support@findr.io" 
+                      defaultValue="support@iFound.io" 
                       className="h-11 rounded-xl bg-secondary/50 border-border/50"
                     />
                   </div>
@@ -626,7 +626,7 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label>Default Finder Message</Label>
                   <Textarea 
-                    defaultValue="Hello! Someone has found your item and is trying to return it. Please check your FindR dashboard for details."
+                    defaultValue="Hello! Someone has found your item and is trying to return it. Please check your iFound dashboard for details."
                     className="min-h-[100px] rounded-xl bg-secondary/50 border-border/50 resize-none"
                   />
                 </div>

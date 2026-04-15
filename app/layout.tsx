@@ -15,7 +15,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'FindR - QR-Powered Lost & Found Platform',
+  title: 'iFound - QR-Powered Lost & Found Platform',
   description: 'Never lose what matters again. QR-powered smart recovery system for your valuables.',
   icons: {
     icon: [

@@ -1,5 +1,6 @@
 import type { PreSignUpTriggerHandler } from "aws-lambda";
 import {
+  AdminGetUserCommand,
   AdminLinkProviderForUserCommand,
   AdminUpdateUserAttributesCommand,
   CognitoIdentityProviderClient,
@@ -17,34 +18,95 @@ function parseProvider(userName: string) {
   return { providerName, providerSubject };
 }
 
-export const handler: PreSignUpTriggerHandler = async (event) => {
-  if (event.triggerSource !== "PreSignUp_ExternalProvider") {
-    const email = event.request.userAttributes?.email;
-    const phone = event.request.userAttributes?.phone_number;
+function normalizeEmail(email?: string) {
+  return email?.trim().toLowerCase();
+}
 
-    if (email) {
+async function getUserByUsername(userPoolId: string, username?: string) {
+  if (!username) return null;
+  try {
+    const result = await client.send(
+      new AdminGetUserCommand({
+        UserPoolId: userPoolId,
+        Username: username,
+      })
+    );
+
+    return {
+      Username: result.Username,
+      Attributes: result.UserAttributes,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function findExistingUser(userPoolId: string, email?: string, phone?: string) {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (normalizedEmail) {
+    const directByUsername =
+      (await getUserByUsername(userPoolId, normalizedEmail)) ??
+      (email !== normalizedEmail ? await getUserByUsername(userPoolId, email) : null);
+    if (directByUsername?.Username) {
+      return directByUsername;
+    }
+
+    for (const candidate of Array.from(new Set([email, normalizedEmail].filter(Boolean)))) {
       const byEmail = await client.send(
         new ListUsersCommand({
-          UserPoolId: event.userPoolId,
-          Filter: `email = \"${email}\"`,
+          UserPoolId: userPoolId,
+          Filter: `email = \"${candidate}\"`,
           Limit: 1,
         })
       );
       const existing = byEmail.Users?.[0];
+      if (existing?.Username) {
+        return existing;
+      }
+    }
+  }
+
+  if (phone) {
+    const directByPhone = await getUserByUsername(userPoolId, phone);
+    if (directByPhone?.Username) {
+      return directByPhone;
+    }
+
+    const byPhone = await client.send(
+      new ListUsersCommand({
+        UserPoolId: userPoolId,
+        Filter: `phone_number = \"${phone}\"`,
+        Limit: 1,
+      })
+    );
+    const existing = byPhone.Users?.[0];
+    if (existing?.Username) {
+      return existing;
+    }
+  }
+
+  return null;
+}
+
+export const handler: PreSignUpTriggerHandler = async (event) => {
+  if (event.triggerSource !== "PreSignUp_ExternalProvider") {
+    const email = normalizeEmail(event.request.userAttributes?.email);
+    const phone = event.request.userAttributes?.phone_number;
+
+    if (email) {
+      event.request.userAttributes.email = email;
+    }
+
+    if (email) {
+      const existing = await findExistingUser(event.userPoolId, email, undefined);
       if (existing && existing.Username && existing.Username !== event.userName) {
         throw new Error("An account with this email already exists.");
       }
     }
 
     if (phone) {
-      const byPhone = await client.send(
-        new ListUsersCommand({
-          UserPoolId: event.userPoolId,
-          Filter: `phone_number = \"${phone}\"`,
-          Limit: 1,
-        })
-      );
-      const existing = byPhone.Users?.[0];
+      const existing = await findExistingUser(event.userPoolId, undefined, phone);
       if (existing && existing.Username && existing.Username !== event.userName) {
         throw new Error("An account with this phone number already exists.");
       }
@@ -53,36 +115,19 @@ export const handler: PreSignUpTriggerHandler = async (event) => {
     return event;
   }
 
-  const email = event.request.userAttributes?.email;
+  const email = normalizeEmail(event.request.userAttributes?.email);
   const phone = event.request.userAttributes?.phone_number;
   const parsed = parseProvider(event.userName);
+
+  if (email) {
+    event.request.userAttributes.email = email;
+  }
 
   if (!parsed) {
     return event;
   }
 
-  let existing = null as any;
-  if (email) {
-    const byEmail = await client.send(
-      new ListUsersCommand({
-        UserPoolId: event.userPoolId,
-        Filter: `email = \"${email}\"`,
-        Limit: 1,
-      })
-    );
-    existing = byEmail.Users?.[0];
-  }
-
-  if (!existing && phone) {
-    const byPhone = await client.send(
-      new ListUsersCommand({
-        UserPoolId: event.userPoolId,
-        Filter: `phone_number = \"${phone}\"`,
-        Limit: 1,
-      })
-    );
-    existing = byPhone.Users?.[0];
-  }
+  const existing = await findExistingUser(event.userPoolId, email, phone);
 
   if (!existing || !existing.Username) {
     event.response.autoConfirmUser = true;

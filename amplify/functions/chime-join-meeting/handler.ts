@@ -15,6 +15,7 @@ import {
 const appid = process.env.APPLICATION_ID_FOR_TABLE;
 const platform = process.env.PLATFORM_FOR_TABLE;
 const CHIME_MEETINGS_TABLE_NAME =
+  process.env.IFOUND_CHIME_MEETINGS_TABLE_NAME ||
   process.env.CHIME_MEETINGS_TABLE_NAME ||
   (appid && platform ? `MeetingRoom-${appid}-${platform}` : "");
 

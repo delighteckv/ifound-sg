@@ -47,7 +47,7 @@ export function Footer() {
                 <QrCode className="h-5 w-5 text-white" />
               </div>
               <span className="text-xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
-                FindR
+                iFound
               </span>
             </Link>
             <p className="mt-4 max-w-xs text-sm text-muted-foreground leading-relaxed">
@@ -136,7 +136,7 @@ export function Footer() {
         {/* Bottom */}
         <div className="mt-12 border-t border-border/50 pt-8">
           <p className="text-center text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} FindR. All rights reserved.
+            &copy; {new Date().getFullYear()} iFound. All rights reserved.
           </p>
         </div>
       </div>
