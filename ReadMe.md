@@ -8,11 +8,11 @@ npx ampx sandbox secret set GOOGLE_CLIENT_ID --identifier ifound
 enter value "ampx"
 
 GOOGLE_CLIENT_ID
-976049661884-iigdd99d12mka1cm612sbgfn19rj9mug.apps.googleusercontent.com
+""
 
 GOOGLE_CLIENT_SECRET
-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
-
+""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
+""
 
 
 amplify-myproject-ifound--chimeCreateMeetinglambda-LeWMnq7ueKra

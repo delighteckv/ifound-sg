@@ -1,0 +1,161 @@
+# Superadmin User Guide
+
+## Purpose
+
+The Superadmin manages platform-wide QR inventory. Superadmins do not register QR codes to personal items. Their job is to generate valid QR code stock in packs and make those packs available for customers.
+
+## Primary Responsibilities
+
+- Generate QR code inventory in packs of 4 or 10
+- Track which QR codes are still unassigned
+- Review which QR codes have been registered by customers
+- Monitor platform users, Cognito users, activity, and billing data
+
+## Supported Platforms
+
+- Web dashboard
+
+## Key Pages
+
+- `/dashboard/qr-codes`
+- `/dashboard/users`
+- `/dashboard/manage-cognito`
+- `/dashboard/activity`
+- `/dashboard/payments`
+
+## QR Inventory Flow
+
+### Generate QR Packs
+
+1. Sign in with an Admin account.
+2. Open `QR Inventory` from the dashboard.
+3. Click `Generate QR Packs`.
+4. Select pack size:
+   - `Pack of 4`
+   - `Pack of 10`
+5. Enter how many packs to generate.
+6. Optionally enter a batch label.
+7. Click `Generate Packs`.
+
+### Result
+
+- The system creates valid QR codes in inventory.
+- Each QR code is marked `UNASSIGNED`.
+- Each QR code is attached to:
+  - a `packId`
+  - a `packSize`
+  - a `packPosition`
+  - an optional `batchLabel`
+- QR images are generated and stored for download.
+
+## Inventory States
+
+### Unassigned
+
+- QR code exists
+- QR code is valid
+- No customer has registered it yet
+
+### Assigned
+
+- Customer has registered the QR code
+- QR code now belongs to a specific owner account
+- QR code is linked to a registered item
+
+### Retired
+
+- QR code was registered before
+- Owner or admin marked it inactive/retired
+
+## Reviewing QR Inventory
+
+On the QR Inventory page, Superadmin can review:
+
+- QR code value
+- Pack metadata
+- Assignment status
+- Owner reference for assigned QR codes
+- Created date
+
+## Downloading QR Codes
+
+1. Open `QR Inventory`.
+2. Use the row action menu.
+3. Click `Download QR`.
+
+The system opens or downloads the generated QR image.
+
+## User Management
+
+### App Users
+
+Use `/dashboard/users` to review application-level users stored in the app `User` table.
+
+This page shows:
+
+- Display name
+- Email
+- Phone
+- Plan
+- Number of QR codes
+- Status
+
+### Cognito Users
+
+Use `/dashboard/manage-cognito` to review actual Cognito user-pool users.
+
+This page shows:
+
+- Cognito username
+- Email
+- Phone
+- Provider
+- Group membership
+- Cognito status
+- Enabled/disabled status
+
+## Analytics and Reporting
+
+Superadmin can use:
+
+- `/dashboard/activity` for operational activity
+- `/dashboard/payments` for payment and subscription metrics
+
+Analytics are aggregated from product events such as:
+
+- scans
+- messages
+- calls
+- payments
+- subscriptions
+
+## Operational Notes
+
+- Only Superadmin should generate QR inventory.
+- Customers should never create their own QR codes directly.
+- Inventory packs should be printed and distributed to customers.
+- Customers register only QR codes that already exist in the generated inventory.
+
+## Common Issues
+
+### QR pack generated but customer cannot register code
+
+Check:
+
+- QR code exists in inventory
+- QR code status is `UNASSIGNED`
+- QR code was entered correctly
+
+### QR code appears assigned unexpectedly
+
+Check:
+
+- whether a customer already registered it
+- whether the wrong QR code was distributed
+
+## Best Practice
+
+- Use clear batch labels for traceability
+- Generate packs in operational batches
+- Validate printed QR images before distribution
+

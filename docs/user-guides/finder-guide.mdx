@@ -1,0 +1,100 @@
+# Finder User Guide
+
+## Purpose
+
+The Finder is any person who discovers a tagged item and scans its QR code. The Finder does not need to create an account.
+
+## Primary Responsibilities
+
+- Scan a QR code on a found item
+- Open the item’s landing page
+- Contact the owner through the available actions
+
+## Supported Platforms
+
+- Mobile browser
+- Desktop browser
+- Mobile app browser/webview if opened from a scan flow
+
+## No Login Required
+
+The Finder flow is designed to be frictionless.
+
+The Finder can:
+
+- scan a QR code
+- open the landing page
+- send a message
+- start a call
+
+without creating an account.
+
+## Finder Flow
+
+### Step 1: Scan QR Code
+
+1. Use phone camera or QR scanner.
+2. Scan the QR code attached to the item.
+3. Open the landing page.
+
+### Step 2: Review Item Page
+
+The landing page shows:
+
+- confirmation that the item belongs to someone
+- basic item context if available
+- actions to contact the owner
+
+### Step 3: Contact the Owner
+
+Available actions may include:
+
+- `Send Message`
+- `Audio Call Owner`
+- `Video Call Owner`
+
+## Sending a Message
+
+1. Open the found page.
+2. Click `Send Message`.
+3. Enter message text.
+4. Optionally enter your contact information.
+5. Submit.
+
+### Expected Result
+
+- Message is saved
+- Owner is notified through the platform
+- Event is logged in owner activity
+
+## Starting a Call
+
+1. Open the found page.
+2. Click `Audio Call Owner` or `Video Call Owner`.
+3. Allow required permissions if prompted.
+
+### Expected Result
+
+- You are connected to the correct owner room
+- The owner can join from their dashboard call flow
+- Call activity is logged
+
+## Invalid QR Code Cases
+
+If the QR code is not valid or not available:
+
+- the page should show a safe unavailable state
+- no owner contact route should be exposed
+
+## Privacy Expectations
+
+The Finder should not need to expose personal data unless they choose to.
+
+The platform should avoid exposing unnecessary owner contact details directly.
+
+## Best Practice
+
+- Give clear location details in your message
+- Share a callback method only if you are comfortable
+- Use the message flow if a live call is not practical
+

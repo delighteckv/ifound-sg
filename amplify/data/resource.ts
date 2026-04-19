@@ -74,14 +74,22 @@ const schema = a.schema({
   QrCode: a
     .model({
       code: a.string().required(),
+      packId: a.string(),
+      packSize: a.integer(),
+      packPosition: a.integer(),
+      batchLabel: a.string(),
+      generatedBy: a.id(),
       ownerId: a.id(),
       valuableId: a.id(),
       status: a.enum(QrStatus),
       label: a.string(),
+      assignedAt: a.datetime(),
+      registeredAt: a.datetime(),
       createdAt: a.datetime(),
     })
     .identifier(["code"])
     .secondaryIndexes((index) => [
+      index("packId").queryField("QrCodesByPack"),
       index("ownerId").queryField("QrCodesByOwner"),
       index("valuableId").queryField("QrCodesByValuable"),
       index("status").queryField("QrCodesByStatus"),
