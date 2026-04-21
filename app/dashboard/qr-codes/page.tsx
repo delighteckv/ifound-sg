@@ -136,7 +136,7 @@ const qrCodesByOwnerQuery = /* GraphQL */ `
 `
 
 const qrCodesByStatusQuery = /* GraphQL */ `
-  query QrCodesByStatus($status: QrStatus!, $limit: Int, $nextToken: String) {
+  query QrCodesByStatus($status: QrCodeStatus!, $limit: Int, $nextToken: String) {
     QrCodesByStatus(status: $status, limit: $limit, nextToken: $nextToken) {
       items {
         code
