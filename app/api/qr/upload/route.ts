@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { ImageResponse } from "next/og"
+import { createElement } from "react"
 import QRCode from "qrcode"
-import { createCanvas } from "@napi-rs/canvas"
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import outputs from "@/amplify_outputs.json"
@@ -11,7 +12,6 @@ const s3 = new S3Client({ region })
 
 const STICKER_WIDTH = 1024
 const STICKER_HEIGHT = 1024
-const STICKER_RADIUS = 54
 const BACKGROUND = "#8CFF1A"
 const FOREGROUND = "#111111"
 const WEBSITE = "ifound.sg"
@@ -21,77 +21,13 @@ function objectKey(code: string) {
   return `public/qr-codes/${code}.png`
 }
 
-function withRoundedRect(
-  ctx: ReturnType<typeof createCanvas>["getContext"],
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-) {
-  const r = Math.min(radius, width / 2, height / 2)
-  ctx.beginPath()
-  ctx.moveTo(x + r, y)
-  ctx.lineTo(x + width - r, y)
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r)
-  ctx.lineTo(x + width, y + height - r)
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height)
-  ctx.lineTo(x + r, y + height)
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r)
-  ctx.lineTo(x, y + r)
-  ctx.quadraticCurveTo(x, y, x + r, y)
-  ctx.closePath()
-}
-
-function drawBackground(ctx: ReturnType<typeof createCanvas>["getContext"]) {
-  ctx.fillStyle = BACKGROUND
-  withRoundedRect(ctx, 0, 0, STICKER_WIDTH, STICKER_HEIGHT, STICKER_RADIUS)
-  ctx.fill()
-
-  ctx.save()
-  withRoundedRect(ctx, 0, 0, STICKER_WIDTH, STICKER_HEIGHT, STICKER_RADIUS)
-  ctx.clip()
-
-  ctx.strokeStyle = "rgba(255,255,255,0.08)"
-  ctx.lineWidth = 1
-  for (let y = 0; y < STICKER_HEIGHT; y += 8) {
-    ctx.beginPath()
-    ctx.moveTo(0, y)
-    ctx.lineTo(STICKER_WIDTH, y + 2)
-    ctx.stroke()
-  }
-
-  const glow = ctx.createLinearGradient(0, 0, STICKER_WIDTH, STICKER_HEIGHT)
-  glow.addColorStop(0, "rgba(255,255,255,0.16)")
-  glow.addColorStop(0.5, "rgba(255,255,255,0)")
-  glow.addColorStop(1, "rgba(0,0,0,0.08)")
-  ctx.fillStyle = glow
-  ctx.fillRect(0, 0, STICKER_WIDTH, STICKER_HEIGHT)
-  ctx.restore()
+function toBase64(value: string) {
+  return Buffer.from(value, "utf8").toString("base64")
 }
 
 async function createSticker(code: string, payload: string) {
-  const canvas = createCanvas(STICKER_WIDTH, STICKER_HEIGHT)
-  const ctx = canvas.getContext("2d")
-
-  drawBackground(ctx)
-
-  ctx.fillStyle = FOREGROUND
-  ctx.textBaseline = "top"
-
-  ctx.font = "bold 168px Arial"
-  ctx.fillText("iFound", 70, 78)
-
-  ctx.font = "bold 58px Arial"
-  ctx.fillText("R", 920, 106)
-  ctx.beginPath()
-  ctx.lineWidth = 10
-  ctx.arc(940, 126, 34, 0, Math.PI * 2)
-  ctx.strokeStyle = FOREGROUND
-  ctx.stroke()
-
-  const qrCanvas = createCanvas(460, 460)
-  await QRCode.toCanvas(qrCanvas as any, payload, {
+  const qrSvg = await QRCode.toString(payload, {
+    type: "svg",
     errorCorrectionLevel: "H",
     margin: 1,
     width: 460,
@@ -100,35 +36,119 @@ async function createSticker(code: string, payload: string) {
       light: "#0000",
     },
   })
-  ctx.drawImage(qrCanvas as any, 58, 365, 460, 460)
 
-  ctx.font = "bold 82px Arial"
-  ctx.fillText("iFound", 170, 590)
+  const qrDataUrl = `data:image/svg+xml;base64,${toBase64(qrSvg)}`
 
-  ctx.font = "bold 58px Arial"
-  let y = 405
-  for (const line of TAGLINE) {
-    ctx.fillText(line, 585, y)
-    y += 72
-  }
+  const response = new ImageResponse(
+    createElement(
+      "div",
+      {
+        style: {
+          width: STICKER_WIDTH,
+          height: STICKER_HEIGHT,
+          display: "flex",
+          flexDirection: "column",
+          position: "relative",
+          background: BACKGROUND,
+          color: FOREGROUND,
+          borderRadius: 54,
+          overflow: "hidden",
+          padding: 60,
+          fontFamily: "Arial",
+        },
+      },
+      createElement("div", {
+        style: {
+          position: "absolute",
+          inset: 0,
+          backgroundImage:
+            "repeating-linear-gradient(180deg, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 1px, transparent 1px, transparent 8px)",
+          opacity: 0.55,
+        },
+      }),
+      createElement(
+        "div",
+        { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", zIndex: 1 } },
+        createElement(
+          "div",
+          { style: { display: "flex", alignItems: "center", fontSize: 170, fontWeight: 900, lineHeight: 1 } },
+          createElement("span", null, "iFound"),
+        ),
+        createElement(
+          "div",
+          {
+            style: {
+              marginTop: 8,
+              width: 74,
+              height: 74,
+              borderRadius: 999,
+              border: `9px solid ${FOREGROUND}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 48,
+              fontWeight: 900,
+            },
+          },
+          "R",
+        ),
+      ),
+      createElement(
+        "div",
+        { style: { display: "flex", marginTop: 120, gap: 56, zIndex: 1 } },
+        createElement(
+          "div",
+          { style: { display: "flex", flexDirection: "column", width: 460 } },
+          createElement("img", { src: qrDataUrl, width: "460", height: "460", alt: "QR code" }),
+          createElement(
+            "div",
+            { style: { display: "flex", justifyContent: "center", marginTop: -10, fontSize: 84, fontWeight: 900 } },
+            "iFound",
+          ),
+        ),
+        createElement(
+          "div",
+          { style: { display: "flex", flexDirection: "column", flex: 1, paddingTop: 24 } },
+          createElement(
+            "div",
+            { style: { display: "flex", flexDirection: "column", fontSize: 58, fontWeight: 800, lineHeight: 1.1 } },
+            ...TAGLINE.map((line) => createElement("span", { key: line }, line)),
+          ),
+          createElement(
+            "div",
+            {
+              style: {
+                marginTop: 64,
+                width: 132,
+                height: 132,
+                borderRadius: 999,
+                border: `11px solid ${FOREGROUND}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 92,
+                fontWeight: 900,
+              },
+            },
+            "R",
+          ),
+          createElement("div", { style: { marginTop: 42, fontSize: 72, fontWeight: 900 } }, WEBSITE),
+        ),
+      ),
+      createElement(
+        "div",
+        { style: { marginTop: 34, zIndex: 1, display: "flex", flexDirection: "column", gap: 8 } },
+        createElement("div", { style: { fontSize: 42, fontWeight: 900 } }, `Code ${code}`),
+        createElement("div", { style: { fontSize: 32, fontWeight: 500 } }, "Scan to contact the owner securely"),
+      ),
+    ),
+    {
+      width: STICKER_WIDTH,
+      height: STICKER_HEIGHT,
+    },
+  )
 
-  ctx.beginPath()
-  ctx.lineWidth = 12
-  ctx.arc(690, 705, 64, 0, Math.PI * 2)
-  ctx.stroke()
-  ctx.font = "bold 118px Arial"
-  ctx.fillText("R", 650, 650)
-
-  ctx.font = "bold 72px Arial"
-  ctx.fillText(WEBSITE, 585, 808)
-
-  ctx.font = "bold 42px Arial"
-  ctx.fillText(`Code ${code}`, 75, 864)
-
-  ctx.font = "32px Arial"
-  ctx.fillText("Scan to contact the owner securely", 75, 913)
-
-  return canvas.toBuffer("image/png")
+  return Buffer.from(await response.arrayBuffer())
 }
 
 export async function POST(req: NextRequest) {
