@@ -79,6 +79,8 @@ const schema = a.schema({
       packPosition: a.integer(),
       batchLabel: a.string(),
       generatedBy: a.id(),
+      packOwnerId: a.id(),
+      packAssignedAt: a.datetime(),
       ownerId: a.id(),
       valuableId: a.id(),
       status: a.enum(QrStatus),
@@ -90,6 +92,7 @@ const schema = a.schema({
     .identifier(["code"])
     .secondaryIndexes((index) => [
       index("packId").queryField("QrCodesByPack"),
+      index("packOwnerId").queryField("QrCodesByPackOwner"),
       index("ownerId").queryField("QrCodesByOwner"),
       index("valuableId").queryField("QrCodesByValuable"),
       index("status").queryField("QrCodesByStatus"),

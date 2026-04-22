@@ -48,6 +48,8 @@ type QrRecord = {
   packPosition?: number | null
   batchLabel?: string | null
   generatedBy?: string | null
+  packOwnerId?: string | null
+  packAssignedAt?: string | null
   ownerId?: string | null
   valuableId?: string | null
   status?: string | null
@@ -73,6 +75,14 @@ type ValuableRecord = {
 type ScanRecord = {
   qrCodeId?: string | null
   scannedAt?: string | null
+}
+
+type UserRecord = {
+  cognitoId: string
+  email?: string | null
+  displayName?: string | null
+  firstName?: string | null
+  lastName?: string | null
 }
 
 type QRRow = {
@@ -103,6 +113,11 @@ type PackFormState = {
   batchLabel: string
 }
 
+type AssignPackFormState = {
+  packId: string
+  ownerId: string
+}
+
 const CATEGORIES = [
   { value: "Electronics", label: "Electronics" },
   { value: "Accessories", label: "Accessories" },
@@ -123,6 +138,32 @@ const qrCodesByOwnerQuery = /* GraphQL */ `
         packPosition
         batchLabel
         generatedBy
+        packOwnerId
+        packAssignedAt
+        ownerId
+        valuableId
+        status
+        label
+        assignedAt
+        registeredAt
+        createdAt
+      }
+    }
+  }
+`
+
+const qrCodesByPackOwnerQuery = /* GraphQL */ `
+  query QrCodesByPackOwner($packOwnerId: ID!, $limit: Int, $nextToken: String) {
+    QrCodesByPackOwner(packOwnerId: $packOwnerId, limit: $limit, nextToken: $nextToken) {
+      items {
+        code
+        packId
+        packSize
+        packPosition
+        batchLabel
+        generatedBy
+        packOwnerId
+        packAssignedAt
         ownerId
         valuableId
         status
@@ -145,6 +186,32 @@ const qrCodesByStatusQuery = /* GraphQL */ `
         packPosition
         batchLabel
         generatedBy
+        packOwnerId
+        packAssignedAt
+        ownerId
+        valuableId
+        status
+        label
+        assignedAt
+        registeredAt
+        createdAt
+      }
+    }
+  }
+`
+
+const qrCodesByPackQuery = /* GraphQL */ `
+  query QrCodesByPack($packId: String!, $limit: Int, $nextToken: String) {
+    QrCodesByPack(packId: $packId, limit: $limit, nextToken: $nextToken) {
+      items {
+        code
+        packId
+        packSize
+        packPosition
+        batchLabel
+        generatedBy
+        packOwnerId
+        packAssignedAt
         ownerId
         valuableId
         status
@@ -187,6 +254,20 @@ const scansByOwnerQuery = /* GraphQL */ `
   }
 `
 
+const usersByRoleQuery = /* GraphQL */ `
+  query UsersByRole($role: UserRole!, $limit: Int, $nextToken: String) {
+    UsersByRole(role: $role, limit: $limit, nextToken: $nextToken) {
+      items {
+        cognitoId
+        email
+        displayName
+        firstName
+        lastName
+      }
+    }
+  }
+`
+
 const getQrCodeQuery = /* GraphQL */ `
   query GetQrCode($code: String!) {
     getQrCode(code: $code) {
@@ -196,6 +277,8 @@ const getQrCodeQuery = /* GraphQL */ `
       packPosition
       batchLabel
       generatedBy
+      packOwnerId
+      packAssignedAt
       ownerId
       valuableId
       status
@@ -294,6 +377,10 @@ function statusFromQr(record: QrRecord): QRRow["status"] {
   return "active"
 }
 
+function getUserLabel(user: UserRecord) {
+  return user.displayName || [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || user.cognitoId
+}
+
 export default function QRCodesPage() {
   const [ownerId, setOwnerId] = useState("")
   const [ownerLabel, setOwnerLabel] = useState("You")
@@ -305,10 +392,17 @@ export default function QRCodesPage() {
   const [success, setSuccess] = useState("")
   const [isRegisterOpen, setIsRegisterOpen] = useState(false)
   const [isPackOpen, setIsPackOpen] = useState(false)
+  const [isAssignPackOpen, setIsAssignPackOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [selectedRow, setSelectedRow] = useState<QRRow | null>(null)
+  const [ownerOptions, setOwnerOptions] = useState<UserRecord[]>([])
   const [itemForm, setItemForm] = useState<ItemFormState>({ qrCode: "", itemName: "", category: "", description: "" })
   const [packForm, setPackForm] = useState<PackFormState>({ packSize: "4", packsCount: "1", batchLabel: "" })
+  const [assignPackForm, setAssignPackForm] = useState<AssignPackFormState>({ packId: "", ownerId: "" })
+  const ownerLabelMap = useMemo(
+    () => new Map(ownerOptions.map((user) => [user.cognitoId, getUserLabel(user)])),
+    [ownerOptions],
+  )
 
   const columns: Column<QRRow>[] = useMemo(
     () => [
@@ -390,7 +484,7 @@ export default function QRCodesPage() {
             id: qr.code,
             itemName: qr.label || (qr.status === "UNASSIGNED" ? "Awaiting registration" : "Registered item"),
             category: qr.status === "UNASSIGNED" ? "Inventory" : "Assigned",
-            owner: qr.ownerId ? qr.ownerId.slice(0, 8) : "Not assigned",
+            owner: qr.packOwnerId ? ownerLabelMap.get(qr.packOwnerId) || qr.packOwnerId.slice(0, 8) : "Not assigned",
             status: statusFromQr(qr),
             scans: 0,
             lastScanned: null,
@@ -407,7 +501,7 @@ export default function QRCodesPage() {
       }
 
       const [qrData, valuableData, scanData] = await Promise.all([
-        runGraphQL<{ QrCodesByOwner: { items: QrRecord[] } }>(qrCodesByOwnerQuery, { ownerId: currentOwnerId, limit: 200 }),
+        runGraphQL<{ QrCodesByPackOwner: { items: QrRecord[] } }>(qrCodesByPackOwnerQuery, { packOwnerId: currentOwnerId, limit: 200 }),
         runGraphQL<{ ValuablesByOwner: { items: ValuableRecord[] } }>(valuablesByOwnerQuery, { ownerId: currentOwnerId, limit: 200 }),
         runGraphQL<{ ScansByOwner: { items: ScanRecord[] } }>(scansByOwnerQuery, { ownerId: currentOwnerId, limit: 500 }),
       ])
@@ -425,13 +519,13 @@ export default function QRCodesPage() {
         scanStats.set(scan.qrCodeId, current)
       }
 
-      const nextRows = qrData.QrCodesByOwner.items.map((qr) => {
+      const nextRows = qrData.QrCodesByPackOwner.items.map((qr) => {
         const valuable = qr.valuableId ? valuableById.get(qr.valuableId) : undefined
         const stats = scanStats.get(qr.code) ?? { scans: 0, lastScanned: null }
         return {
           id: qr.code,
-          itemName: valuable?.name || qr.label || "Registered item",
-          category: valuable?.category || "Other",
+          itemName: valuable?.name || qr.label || "Awaiting registration",
+          category: valuable?.category || (qr.status === "UNASSIGNED" ? "Purchased pack" : "Other"),
           owner: currentOwnerLabel,
           status: statusFromQr(qr),
           scans: stats.scans,
@@ -473,6 +567,10 @@ export default function QRCodesPage() {
         setIsAdmin(adminMode)
         setOwnerId(sub)
         setOwnerLabel(label)
+        if (adminMode) {
+          const owners = await runGraphQL<{ UsersByRole: { items: UserRecord[] } }>(usersByRoleQuery, { role: "OWNER", limit: 500 })
+          setOwnerOptions((owners.UsersByRole.items || []).sort((left, right) => getUserLabel(left).localeCompare(getUserLabel(right))))
+        }
         await loadRows(sub, label, adminMode)
       } catch (err: any) {
         setError(err?.message || "Unable to initialize QR codes")
@@ -485,7 +583,17 @@ export default function QRCodesPage() {
   const resetForms = () => {
     setItemForm({ qrCode: "", itemName: "", category: "", description: "" })
     setPackForm({ packSize: "4", packsCount: "1", batchLabel: "" })
+    setAssignPackForm({ packId: "", ownerId: "" })
     setSelectedRow(null)
+  }
+
+  const openAssignPack = (row: QRRow) => {
+    if (!row.packId) {
+      setError("This QR code is not part of a pack")
+      return
+    }
+    setAssignPackForm({ packId: row.packId, ownerId: "" })
+    setIsAssignPackOpen(true)
   }
 
   const handleRegisterQr = async () => {
@@ -503,6 +611,12 @@ export default function QRCodesPage() {
 
       if (!qrLookup.getQrCode) {
         throw new Error("This QR code does not exist")
+      }
+      if (!qrLookup.getQrCode.packId) {
+        throw new Error("This QR code is not part of a valid customer pack")
+      }
+      if (qrLookup.getQrCode.packOwnerId !== ownerId) {
+        throw new Error("This QR code does not belong to a pack assigned to your account")
       }
       if (qrLookup.getQrCode.status !== "UNASSIGNED" || qrLookup.getQrCode.ownerId) {
         throw new Error("This QR code has already been assigned")
@@ -551,6 +665,59 @@ export default function QRCodesPage() {
       await loadRows(ownerId, ownerLabel, isAdmin)
     } catch (err: any) {
       setError(err?.message || "Unable to register QR code")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleAssignPack = async () => {
+    if (!assignPackForm.packId || !assignPackForm.ownerId) {
+      setError("Pack and owner are required")
+      return
+    }
+
+    setIsSubmitting(true)
+    setError("")
+    setSuccess("")
+    try {
+      const packData = await runGraphQL<{ QrCodesByPack: { items: QrRecord[] } }>(qrCodesByPackQuery, {
+        packId: assignPackForm.packId,
+        limit: 50,
+      })
+      const packItems = packData.QrCodesByPack.items || []
+
+      if (!packItems.length) {
+        throw new Error("Pack does not exist")
+      }
+
+      const alreadyAssignedToAnotherOwner = packItems.some(
+        (item) => item.packOwnerId && item.packOwnerId !== assignPackForm.ownerId,
+      )
+
+      if (alreadyAssignedToAnotherOwner) {
+        throw new Error("This pack is already assigned to a different owner")
+      }
+
+      const assignedAt = new Date().toISOString()
+      await Promise.all(
+        packItems.map((item) =>
+          runGraphQL(updateQrCodeMutation, {
+            input: {
+              code: item.code,
+              packOwnerId: assignPackForm.ownerId,
+              packAssignedAt: assignedAt,
+            },
+          }),
+        ),
+      )
+
+      const assignedOwner = ownerOptions.find((user) => user.cognitoId === assignPackForm.ownerId)
+      setSuccess(`Pack ${assignPackForm.packId} assigned to ${assignedOwner ? getUserLabel(assignedOwner) : "owner"}`)
+      setIsAssignPackOpen(false)
+      resetForms()
+      await loadRows(ownerId, ownerLabel, isAdmin)
+    } catch (err: any) {
+      setError(err?.message || "Unable to assign pack")
     } finally {
       setIsSubmitting(false)
     }
@@ -678,7 +845,9 @@ export default function QRCodesPage() {
   }
 
   const title = isAdmin ? "QR Inventory" : "My QR Codes"
-  const subtitle = isAdmin ? "Generate QR packs for customers and monitor assignment" : "Register valid QR codes from your pack and manage assigned items"
+  const subtitle = isAdmin
+    ? "Generate QR packs, assign each pack to an owner, and monitor registration"
+    : "Register QR codes only from packs assigned to your account and manage assigned items"
 
   return (
     <div className="space-y-8">
@@ -720,6 +889,9 @@ export default function QRCodesPage() {
                     <Label>Batch label</Label>
                     <Input value={packForm.batchLabel} onChange={(event) => setPackForm((current) => ({ ...current, batchLabel: event.target.value }))} placeholder="e.g. April Singapore Batch" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    After generation, assign the pack to a specific owner before the QR codes can be registered.
+                  </p>
                   <Button onClick={handleGeneratePacks} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
                     {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate Packs"}
                   </Button>
@@ -744,6 +916,9 @@ export default function QRCodesPage() {
                     <Label>QR Code</Label>
                     <Input value={itemForm.qrCode} onChange={(event) => setItemForm((current) => ({ ...current, qrCode: event.target.value.toUpperCase() }))} placeholder="QR-XXXXXXXXXXXX" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Registration succeeds only if the QR code belongs to a pack already assigned to your account.
+                  </p>
                   <div className="space-y-2">
                     <Label>Tagged to</Label>
                     <Input value={itemForm.itemName} onChange={(event) => setItemForm((current) => ({ ...current, itemName: event.target.value }))} placeholder="e.g. MacBook Pro or Bicycle" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
@@ -800,6 +975,12 @@ export default function QRCodesPage() {
                   <Download className="mr-2 h-4 w-4" />
                   Download QR
                 </DropdownMenuItem>
+                {isAdmin && row.packId ? (
+                  <DropdownMenuItem className="rounded-lg" onClick={() => openAssignPack(row)}>
+                    <PackagePlus className="mr-2 h-4 w-4" />
+                    Assign Pack
+                  </DropdownMenuItem>
+                ) : null}
                 {!isAdmin && row.status !== "unassigned" ? (
                   <>
                     <DropdownMenuItem className="rounded-lg" onClick={() => openEdit(row)}>
@@ -820,6 +1001,39 @@ export default function QRCodesPage() {
           />
         )}
       </motion.div>
+
+      <Dialog open={isAssignPackOpen} onOpenChange={setIsAssignPackOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>Assign Pack</DialogTitle>
+            <DialogDescription>Assign the selected QR pack to an owner before they register any QR from it.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label>Pack ID</Label>
+              <Input value={assignPackForm.packId} disabled className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+            </div>
+            <div className="space-y-2">
+              <Label>Owner</Label>
+              <Select value={assignPackForm.ownerId} onValueChange={(value) => setAssignPackForm((current) => ({ ...current, ownerId: value }))}>
+                <SelectTrigger className="h-11 rounded-xl border-border/50 bg-secondary/50">
+                  <SelectValue placeholder="Select owner" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  {ownerOptions.map((owner) => (
+                    <SelectItem key={owner.cognitoId} value={owner.cognitoId}>
+                      {getUserLabel(owner)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleAssignPack} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Assign Pack"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl">
