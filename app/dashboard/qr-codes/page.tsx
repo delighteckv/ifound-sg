@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  Edit,
   Download,
   Loader2,
   PackagePlus,
@@ -63,6 +64,7 @@ type ValuableRecord = {
   id: string
   ownerId: string
   name?: string | null
+  serialNumber?: string | null
   description?: string | null
   category?: string | null
   status?: string | null
@@ -88,8 +90,10 @@ type UserRecord = {
 type QRRow = {
   id: string
   itemName: string
+  serialNumber?: string
   category: string
   owner: string
+  packOwnerId?: string
   status: "active" | "inactive" | "unassigned"
   scans: number
   lastScanned: string | null
@@ -103,6 +107,7 @@ type QRRow = {
 type ItemFormState = {
   qrCode: string
   itemName: string
+  serialNumber: string
   category: string
   description: string
 }
@@ -231,6 +236,7 @@ const valuablesByOwnerQuery = /* GraphQL */ `
         id
         ownerId
         name
+        serialNumber
         description
         category
         status
@@ -392,13 +398,15 @@ export default function QRCodesPage() {
   const [success, setSuccess] = useState("")
   const [isRegisterOpen, setIsRegisterOpen] = useState(false)
   const [isPackOpen, setIsPackOpen] = useState(false)
+  const [isClaimPackOpen, setIsClaimPackOpen] = useState(false)
   const [isAssignPackOpen, setIsAssignPackOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [selectedRow, setSelectedRow] = useState<QRRow | null>(null)
   const [ownerOptions, setOwnerOptions] = useState<UserRecord[]>([])
-  const [itemForm, setItemForm] = useState<ItemFormState>({ qrCode: "", itemName: "", category: "", description: "" })
+  const [itemForm, setItemForm] = useState<ItemFormState>({ qrCode: "", itemName: "", serialNumber: "", category: "", description: "" })
   const [packForm, setPackForm] = useState<PackFormState>({ packSize: "4", packsCount: "1", batchLabel: "" })
   const [assignPackForm, setAssignPackForm] = useState<AssignPackFormState>({ packId: "", ownerId: "" })
+  const [claimPackId, setClaimPackId] = useState("")
   const ownerLabelMap = useMemo(
     () => new Map(ownerOptions.map((user) => [user.cognitoId, getUserLabel(user)])),
     [ownerOptions],
@@ -485,6 +493,7 @@ export default function QRCodesPage() {
             itemName: qr.label || (qr.status === "UNASSIGNED" ? "Awaiting registration" : "Registered item"),
             category: qr.status === "UNASSIGNED" ? "Inventory" : "Assigned",
             owner: qr.packOwnerId ? ownerLabelMap.get(qr.packOwnerId) || qr.packOwnerId.slice(0, 8) : "Not assigned",
+            packOwnerId: qr.packOwnerId || undefined,
             status: statusFromQr(qr),
             scans: 0,
             lastScanned: null,
@@ -525,8 +534,10 @@ export default function QRCodesPage() {
         return {
           id: qr.code,
           itemName: valuable?.name || qr.label || "Awaiting registration",
+          serialNumber: valuable?.serialNumber || "",
           category: valuable?.category || (qr.status === "UNASSIGNED" ? "Purchased pack" : "Other"),
           owner: currentOwnerLabel,
+          packOwnerId: qr.packOwnerId || undefined,
           status: statusFromQr(qr),
           scans: stats.scans,
           lastScanned: stats.lastScanned,
@@ -581,9 +592,10 @@ export default function QRCodesPage() {
   }, [])
 
   const resetForms = () => {
-    setItemForm({ qrCode: "", itemName: "", category: "", description: "" })
+    setItemForm({ qrCode: "", itemName: "", serialNumber: "", category: "", description: "" })
     setPackForm({ packSize: "4", packsCount: "1", batchLabel: "" })
     setAssignPackForm({ packId: "", ownerId: "" })
+    setClaimPackId("")
     setSelectedRow(null)
   }
 
@@ -592,7 +604,7 @@ export default function QRCodesPage() {
       setError("This QR code is not part of a pack")
       return
     }
-    setAssignPackForm({ packId: row.packId, ownerId: "" })
+    setAssignPackForm({ packId: row.packId, ownerId: row.packOwnerId || "" })
     setIsAssignPackOpen(true)
   }
 
@@ -627,6 +639,7 @@ export default function QRCodesPage() {
         input: {
           ownerId,
           name: itemForm.itemName.trim(),
+          serialNumber: itemForm.serialNumber.trim() || null,
           description: itemForm.description.trim() || null,
           category: itemForm.category,
           status: "ACTIVE",
@@ -690,14 +703,6 @@ export default function QRCodesPage() {
         throw new Error("Pack does not exist")
       }
 
-      const alreadyAssignedToAnotherOwner = packItems.some(
-        (item) => item.packOwnerId && item.packOwnerId !== assignPackForm.ownerId,
-      )
-
-      if (alreadyAssignedToAnotherOwner) {
-        throw new Error("This pack is already assigned to a different owner")
-      }
-
       const assignedAt = new Date().toISOString()
       await Promise.all(
         packItems.map((item) =>
@@ -718,6 +723,60 @@ export default function QRCodesPage() {
       await loadRows(ownerId, ownerLabel, isAdmin)
     } catch (err: any) {
       setError(err?.message || "Unable to assign pack")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleClaimPack = async () => {
+    const normalizedPackId = claimPackId.trim().toUpperCase()
+    if (!ownerId || !normalizedPackId) {
+      setError("Pack ID is required")
+      return
+    }
+
+    setIsSubmitting(true)
+    setError("")
+    setSuccess("")
+    try {
+      const packData = await runGraphQL<{ QrCodesByPack: { items: QrRecord[] } }>(qrCodesByPackQuery, {
+        packId: normalizedPackId,
+        limit: 50,
+      })
+
+      const packItems = packData.QrCodesByPack.items || []
+      if (!packItems.length) {
+        throw new Error("Pack does not exist")
+      }
+
+      const ownerIds = Array.from(new Set(packItems.map((item) => item.packOwnerId).filter(Boolean)))
+      if (ownerIds.length && !ownerIds.includes(ownerId)) {
+        throw new Error("This pack has already been claimed by another owner")
+      }
+
+      if (ownerIds.includes(ownerId)) {
+        throw new Error("This pack is already claimed on your account")
+      }
+
+      const assignedAt = new Date().toISOString()
+      await Promise.all(
+        packItems.map((item) =>
+          runGraphQL(updateQrCodeMutation, {
+            input: {
+              code: item.code,
+              packOwnerId: ownerId,
+              packAssignedAt: assignedAt,
+            },
+          }),
+        ),
+      )
+
+      setSuccess(`Pack ${normalizedPackId} claimed successfully`)
+      setIsClaimPackOpen(false)
+      resetForms()
+      await loadRows(ownerId, ownerLabel, isAdmin)
+    } catch (err: any) {
+      setError(err?.message || "Unable to claim pack")
     } finally {
       setIsSubmitting(false)
     }
@@ -770,7 +829,7 @@ export default function QRCodesPage() {
 
   const openEdit = (row: QRRow) => {
     setSelectedRow(row)
-    setItemForm({ qrCode: row.id, itemName: row.itemName, category: row.category, description: row.description || "" })
+    setItemForm({ qrCode: row.id, itemName: row.itemName, serialNumber: row.serialNumber || "", category: row.category, description: row.description || "" })
     setIsEditOpen(true)
   }
 
@@ -789,6 +848,7 @@ export default function QRCodesPage() {
           input: {
             id: selectedRow.valuableId,
             name: itemForm.itemName.trim(),
+            serialNumber: itemForm.serialNumber.trim() || null,
             description: itemForm.description.trim() || null,
             category: itemForm.category,
             updatedAt: new Date().toISOString(),
@@ -858,90 +918,124 @@ export default function QRCodesPage() {
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="flex gap-2">
           {isAdmin ? (
-            <Dialog open={isPackOpen} onOpenChange={setIsPackOpen}>
-              <DialogTrigger asChild>
-                <Button className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
-                  <PackagePlus className="mr-2 h-4 w-4" />
-                  Generate QR Packs
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md rounded-2xl">
-                <DialogHeader>
-                  <DialogTitle style={{ fontFamily: "var(--font-display)" }}>Generate QR Packs</DialogTitle>
-                  <DialogDescription>Create packs of 4 or 10 QR codes for new customers.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label>Pack size</Label>
-                    <Select value={packForm.packSize} onValueChange={(value: "4" | "10") => setPackForm((current) => ({ ...current, packSize: value }))}>
-                      <SelectTrigger className="h-11 rounded-xl border-border/50 bg-secondary/50"><SelectValue /></SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="4">Pack of 4</SelectItem>
-                        <SelectItem value="10">Pack of 10</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Number of packs</Label>
-                    <Input value={packForm.packsCount} onChange={(event) => setPackForm((current) => ({ ...current, packsCount: event.target.value.replace(/[^0-9]/g, "") }))} className="h-11 rounded-xl border-border/50 bg-secondary/50" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Batch label</Label>
-                    <Input value={packForm.batchLabel} onChange={(event) => setPackForm((current) => ({ ...current, batchLabel: event.target.value }))} placeholder="e.g. April Singapore Batch" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    After generation, assign the pack to a specific owner before the QR codes can be registered.
-                  </p>
-                  <Button onClick={handleGeneratePacks} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
-                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate Packs"}
+            <>
+              <Dialog open={isPackOpen} onOpenChange={setIsPackOpen}>
+                <DialogTrigger asChild>
+                  <Button className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
+                    <PackagePlus className="mr-2 h-4 w-4" />
+                    Generate QR Packs
                   </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md rounded-2xl">
+                  <DialogHeader>
+                    <DialogTitle style={{ fontFamily: "var(--font-display)" }}>Generate QR Packs</DialogTitle>
+                    <DialogDescription>Create packs of 4 or 10 QR codes for retail sale.</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label>Pack size</Label>
+                      <Select value={packForm.packSize} onValueChange={(value: "4" | "10") => setPackForm((current) => ({ ...current, packSize: value }))}>
+                        <SelectTrigger className="h-11 rounded-xl border-border/50 bg-secondary/50"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="4">Pack of 4</SelectItem>
+                          <SelectItem value="10">Pack of 10</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Number of packs</Label>
+                      <Input value={packForm.packsCount} onChange={(event) => setPackForm((current) => ({ ...current, packsCount: event.target.value.replace(/[^0-9]/g, "") }))} className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Batch label</Label>
+                      <Input value={packForm.batchLabel} onChange={(event) => setPackForm((current) => ({ ...current, batchLabel: event.target.value }))} placeholder="e.g. April Singapore Batch" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Customers claim purchased packs themselves. Admin can later edit pack ownership if needed.
+                    </p>
+                    <Button onClick={handleGeneratePacks} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
+                      {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate Packs"}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </>
           ) : (
-            <Dialog open={isRegisterOpen} onOpenChange={setIsRegisterOpen}>
-              <DialogTrigger asChild>
-                <Button className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Register QR Code
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md rounded-2xl">
-                <DialogHeader>
-                  <DialogTitle style={{ fontFamily: "var(--font-display)" }}>Register QR Code</DialogTitle>
-                  <DialogDescription>Enter a QR code from your pack and attach it to your item.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label>QR Code</Label>
-                    <Input value={itemForm.qrCode} onChange={(event) => setItemForm((current) => ({ ...current, qrCode: event.target.value.toUpperCase() }))} placeholder="QR-XXXXXXXXXXXX" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Registration succeeds only if the QR code belongs to a pack already assigned to your account.
-                  </p>
-                  <div className="space-y-2">
-                    <Label>Tagged to</Label>
-                    <Input value={itemForm.itemName} onChange={(event) => setItemForm((current) => ({ ...current, itemName: event.target.value }))} placeholder="e.g. MacBook Pro or Bicycle" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Select value={itemForm.category} onValueChange={(value) => setItemForm((current) => ({ ...current, category: value }))}>
-                      <SelectTrigger className="h-11 rounded-xl border-border/50 bg-secondary/50"><SelectValue placeholder="Select category" /></SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        {CATEGORIES.map((category) => (<SelectItem key={category.value} value={category.value}>{category.label}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Description</Label>
-                    <Input value={itemForm.description} onChange={(event) => setItemForm((current) => ({ ...current, description: event.target.value }))} placeholder="Optional notes" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
-                  </div>
-                  <Button onClick={handleRegisterQr} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
-                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Validate & Register"}
+            <>
+              <Dialog open={isClaimPackOpen} onOpenChange={setIsClaimPackOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="rounded-xl">
+                    <PackagePlus className="mr-2 h-4 w-4" />
+                    Claim Pack
                   </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md rounded-2xl">
+                  <DialogHeader>
+                    <DialogTitle style={{ fontFamily: "var(--font-display)" }}>Claim Pack</DialogTitle>
+                    <DialogDescription>Enter the pack ID printed on your purchased retail pack.</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label>Pack ID</Label>
+                      <Input value={claimPackId} onChange={(event) => setClaimPackId(event.target.value.toUpperCase())} placeholder="PACK-XXXXXXXXXX" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Claim the pack first. After that, you can register each QR code from that pack to your items.
+                    </p>
+                    <Button onClick={handleClaimPack} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
+                      {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Claim Pack"}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <Dialog open={isRegisterOpen} onOpenChange={setIsRegisterOpen}>
+                <DialogTrigger asChild>
+                  <Button className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Register QR Code
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md rounded-2xl">
+                  <DialogHeader>
+                    <DialogTitle style={{ fontFamily: "var(--font-display)" }}>Register QR Code</DialogTitle>
+                    <DialogDescription>Enter a QR code from your claimed pack and attach it to your item.</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label>QR Code</Label>
+                      <Input value={itemForm.qrCode} onChange={(event) => setItemForm((current) => ({ ...current, qrCode: event.target.value.toUpperCase() }))} placeholder="QR-XXXXXXXXXXXX" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Registration succeeds only if the QR code belongs to a pack claimed on your account.
+                    </p>
+                    <div className="space-y-2">
+                      <Label>Tagged to</Label>
+                      <Input value={itemForm.itemName} onChange={(event) => setItemForm((current) => ({ ...current, itemName: event.target.value }))} placeholder="e.g. MacBook Pro or Bicycle" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Serial Number</Label>
+                      <Input value={itemForm.serialNumber} onChange={(event) => setItemForm((current) => ({ ...current, serialNumber: event.target.value }))} placeholder="Optional device or product serial number" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Select value={itemForm.category} onValueChange={(value) => setItemForm((current) => ({ ...current, category: value }))}>
+                        <SelectTrigger className="h-11 rounded-xl border-border/50 bg-secondary/50"><SelectValue placeholder="Select category" /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          {CATEGORIES.map((category) => (<SelectItem key={category.value} value={category.value}>{category.label}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Description</Label>
+                      <Input value={itemForm.description} onChange={(event) => setItemForm((current) => ({ ...current, description: event.target.value }))} placeholder="Optional notes" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+                    </div>
+                    <Button onClick={handleRegisterQr} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
+                      {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Validate & Register"}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </>
           )}
         </motion.div>
       </div>
@@ -977,8 +1071,8 @@ export default function QRCodesPage() {
                 </DropdownMenuItem>
                 {isAdmin && row.packId ? (
                   <DropdownMenuItem className="rounded-lg" onClick={() => openAssignPack(row)}>
-                    <PackagePlus className="mr-2 h-4 w-4" />
-                    Assign Pack
+                    <Edit className="mr-2 h-4 w-4" />
+                    Edit Pack Ownership
                   </DropdownMenuItem>
                 ) : null}
                 {!isAdmin && row.status !== "unassigned" ? (
@@ -1005,8 +1099,8 @@ export default function QRCodesPage() {
       <Dialog open={isAssignPackOpen} onOpenChange={setIsAssignPackOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>Assign Pack</DialogTitle>
-            <DialogDescription>Assign the selected QR pack to an owner before they register any QR from it.</DialogDescription>
+            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>Edit Pack Ownership</DialogTitle>
+            <DialogDescription>Move this pack to a different owner or correct its current ownership.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
@@ -1029,7 +1123,7 @@ export default function QRCodesPage() {
               </Select>
             </div>
             <Button onClick={handleAssignPack} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
-              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Assign Pack"}
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Ownership"}
             </Button>
           </div>
         </DialogContent>
@@ -1049,6 +1143,10 @@ export default function QRCodesPage() {
             <div className="space-y-2">
               <Label>Tagged to</Label>
               <Input value={itemForm.itemName} onChange={(event) => setItemForm((current) => ({ ...current, itemName: event.target.value }))} className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+            </div>
+            <div className="space-y-2">
+              <Label>Serial Number</Label>
+              <Input value={itemForm.serialNumber} onChange={(event) => setItemForm((current) => ({ ...current, serialNumber: event.target.value }))} className="h-11 rounded-xl border-border/50 bg-secondary/50" />
             </div>
             <div className="space-y-2">
               <Label>Category</Label>

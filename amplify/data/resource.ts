@@ -56,6 +56,7 @@ const schema = a.schema({
     .model({
       ownerId: a.id().required(),
       name: a.string().required(),
+      serialNumber: a.string(),
       description: a.string(),
       category: a.string(),
       status: a.enum(ItemStatus),

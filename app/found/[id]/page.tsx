@@ -58,6 +58,7 @@ type ValuableRecord = {
   id: string
   ownerId: string
   name: string
+  serialNumber?: string | null
   description?: string | null
   category?: string | null
   status?: string | null
@@ -110,6 +111,7 @@ const getValuableQuery = /* GraphQL */ `
       id
       ownerId
       name
+      serialNumber
       description
       category
       status
@@ -605,6 +607,11 @@ export default function FoundItemPage() {
               <p className="mt-1 text-muted-foreground">
                 {item.valuable?.category || "Lost and found item"}
               </p>
+              {item.valuable?.serialNumber ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Serial Number: <span className="font-medium text-foreground">{item.valuable.serialNumber}</span>
+                </p>
+              ) : null}
 
               {item.valuable?.description ? (
                 <p className="mt-4 rounded-xl bg-secondary/50 p-4 text-sm text-muted-foreground">

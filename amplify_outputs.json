@@ -361,6 +361,13 @@
               "isRequired": true,
               "attributes": []
             },
+            "serialNumber": {
+              "name": "serialNumber",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "description": {
               "name": "description",
               "isArray": false,

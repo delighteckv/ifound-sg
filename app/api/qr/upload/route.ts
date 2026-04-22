@@ -21,23 +21,16 @@ function objectKey(code: string) {
   return `public/qr-codes/${code}.png`
 }
 
-function toBase64(value: string) {
-  return Buffer.from(value, "utf8").toString("base64")
-}
-
 async function createSticker(code: string, payload: string) {
-  const qrSvg = await QRCode.toString(payload, {
-    type: "svg",
+  const qrDataUrl = await QRCode.toDataURL(payload, {
     errorCorrectionLevel: "H",
     margin: 1,
     width: 460,
     color: {
       dark: FOREGROUND,
-      light: "#0000",
+      light: "#FFFFFF",
     },
   })
-
-  const qrDataUrl = `data:image/svg+xml;base64,${toBase64(qrSvg)}`
 
   const response = new ImageResponse(
     createElement(
