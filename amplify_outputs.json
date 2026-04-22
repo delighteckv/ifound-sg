@@ -517,6 +517,20 @@
               "isRequired": false,
               "attributes": []
             },
+            "packOwnerId": {
+              "name": "packOwnerId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": false,
+              "attributes": []
+            },
+            "packAssignedAt": {
+              "name": "packAssignedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
             "ownerId": {
               "name": "ownerId",
               "isArray": false,
@@ -599,6 +613,16 @@
                 "queryField": "QrCodesByPack",
                 "fields": [
                   "packId"
+                ]
+              }
+            },
+            {
+              "type": "key",
+              "properties": {
+                "name": "qrCodesByPackOwnerId",
+                "queryField": "QrCodesByPackOwner",
+                "fields": [
+                  "packOwnerId"
                 ]
               }
             },
