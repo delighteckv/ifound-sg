@@ -59,7 +59,7 @@ export function HeroSection() {
             >
               Never Lose What{" "}
               <span className="bg-gradient-to-r from-primary via-primary to-accent bg-clip-text text-transparent">
-                Matters Again
+                Matters!
               </span>
             </h1>
 

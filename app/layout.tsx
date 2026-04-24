@@ -16,7 +16,7 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: 'iFound - QR-Powered Lost & Found Platform',
-  description: 'Never lose what matters again. QR-powered smart recovery system for your valuables.',
+  description: 'Never lose what matters!. QR-powered smart recovery system for your valuables.',
   icons: {
     icon: [
       {

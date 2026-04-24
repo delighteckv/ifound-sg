@@ -7,7 +7,7 @@ import outputs from "@/amplify_outputs.json"
 import { DataTable, type Column } from "@/components/dashboard/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { MapPin, Loader2, Clock, MessageSquare, Phone, QrCode } from "lucide-react"
+import { MapPin, Loader2, Clock, ChevronDown, ChevronUp } from "lucide-react"
 
 type GraphQLResponse<T> = {
   data?: T
@@ -55,10 +55,12 @@ type ActivityRow = {
   qrId: string
   location: string
   contact: string
+  contactFull: string
   action: "scan" | "call" | "message"
   timestamp: string
   status: string
   details: string
+  detailsFull: string
 }
 
 const valuablesByOwnerQuery = /* GraphQL */ `
@@ -156,94 +158,144 @@ function formatStatus(status?: string | null, resolved?: boolean | null) {
   return status || "OPEN"
 }
 
-const columns: Column<ActivityRow>[] = [
-  {
-    key: "timestamp",
-    title: "Time",
-    sortable: true,
-    render: (value) => {
-      const date = new Date(String(value))
-      return (
-        <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <div>
-            <p className="text-sm">{date.toLocaleDateString()}</p>
-            <p className="text-xs text-muted-foreground">{date.toLocaleTimeString()}</p>
-          </div>
-        </div>
-      )
-    },
-  },
-  {
-    key: "itemName",
-    title: "Item",
-    sortable: true,
-    render: (_, row) => (
-      <div>
-        <p className="font-medium">{row.itemName}</p>
-        <p className="font-mono text-xs text-muted-foreground">{row.qrId}</p>
-      </div>
-    ),
-  },
-  {
-    key: "action",
-    title: "Action",
-    sortable: true,
-    render: (value) => {
-      const action = value as ActivityRow["action"]
-      const tone = {
-        scan: "bg-secondary text-secondary-foreground",
-        call: "bg-accent/20 text-accent",
-        message: "bg-primary/20 text-primary",
-      }
-      const label = {
-        scan: "Scanned",
-        call: "Called",
-        message: "Messaged",
-      }
-      return (
-        <Badge variant="secondary" className={tone[action]}>
-          {label[action]}
-        </Badge>
-      )
-    },
-  },
-  {
-    key: "location",
-    title: "Location",
-    sortable: true,
-    render: (value) => (
-      <div className="flex items-center gap-2">
-        <MapPin className="h-4 w-4 text-muted-foreground" />
-        <span>{String(value || "Unknown")}</span>
-      </div>
-    ),
-  },
-  {
-    key: "contact",
-    title: "Finder Contact",
-    sortable: true,
-    render: (value) => (
-      <span className="text-sm text-muted-foreground">{String(value || "Not shared")}</span>
-    ),
-  },
-  {
-    key: "details",
-    title: "Details",
-    render: (value, row) => (
-      <div className="space-y-1">
-        <p className="text-sm">{String(value || "—")}</p>
-        <p className="text-xs text-muted-foreground">{row.status}</p>
-      </div>
-    ),
-  },
-]
-
 export default function ActivityPage() {
   const [rows, setRows] = useState<ActivityRow[]>([])
   const [ownerId, setOwnerId] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
+  const [expandedRowIds, setExpandedRowIds] = useState<string[]>([])
+
+  const toggleExpanded = (rowId: string) => {
+    setExpandedRowIds((current) =>
+      current.includes(rowId) ? current.filter((id) => id !== rowId) : [...current, rowId],
+    )
+  }
+
+  const columns = useMemo<Column<ActivityRow>[]>(
+    () => [
+      {
+        key: "timestamp",
+        title: "Time",
+        sortable: true,
+        render: (value) => {
+          const date = new Date(String(value))
+          return (
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <p className="text-sm">{date.toLocaleDateString()}</p>
+                <p className="text-xs text-muted-foreground">{date.toLocaleTimeString()}</p>
+              </div>
+            </div>
+          )
+        },
+      },
+      {
+        key: "itemName",
+        title: "Item",
+        sortable: true,
+        render: (_, row) => (
+          <div>
+            <p className="font-medium">{row.itemName}</p>
+            <p className="font-mono text-xs text-muted-foreground">{row.qrId}</p>
+          </div>
+        ),
+      },
+      {
+        key: "action",
+        title: "Action",
+        sortable: true,
+        render: (value) => {
+          const action = value as ActivityRow["action"]
+          const tone = {
+            scan: "bg-secondary text-secondary-foreground",
+            call: "bg-accent/20 text-accent",
+            message: "bg-primary/20 text-primary",
+          }
+          const label = {
+            scan: "Scanned",
+            call: "Called",
+            message: "Messaged",
+          }
+          return (
+            <Badge variant="secondary" className={tone[action]}>
+              {label[action]}
+            </Badge>
+          )
+        },
+      },
+      {
+        key: "location",
+        title: "Location",
+        sortable: true,
+        render: (value) => (
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-muted-foreground" />
+            <span>{String(value || "Unknown")}</span>
+          </div>
+        ),
+      },
+      {
+        key: "contact",
+        title: "Finder Contact",
+        sortable: true,
+        render: (_, row) => {
+          const expanded = expandedRowIds.includes(row.id)
+          return (
+            <div className="space-y-2">
+              <p className={`text-sm text-muted-foreground ${expanded ? "whitespace-pre-wrap break-words" : ""}`}>
+                {expanded ? row.contactFull : row.contact}
+              </p>
+              {row.contactFull && row.contactFull !== "Not shared" ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-xs text-primary"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    toggleExpanded(row.id)
+                  }}
+                >
+                  {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  {expanded ? "Collapse" : "Expand"}
+                </button>
+              ) : null}
+            </div>
+          )
+        },
+      },
+      {
+        key: "details",
+        title: "Details",
+        render: (_, row) => {
+          const expanded = expandedRowIds.includes(row.id)
+          return (
+            <div className="space-y-2">
+              <p className={`text-sm ${expanded ? "whitespace-pre-wrap break-words" : ""}`}>
+                {expanded ? row.detailsFull || "—" : row.details || "—"}
+              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-muted-foreground">{row.status}</p>
+                {row.detailsFull && row.detailsFull !== row.details ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-xs text-primary"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      toggleExpanded(row.id)
+                    }}
+                  >
+                    {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    {expanded ? "Show less" : "Show full text"}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          )
+        },
+      },
+    ],
+    [expandedRowIds],
+  )
 
   useEffect(() => {
     let active = true
@@ -312,13 +364,12 @@ export default function ActivityPage() {
             qrId: qrCode,
             location: scan.locationText || "Unknown",
             contact: scan.finderContact || "Not shared",
+            contactFull: scan.finderContact || "Not shared",
             action,
             timestamp: scan.scannedAt,
             status: formatStatus(undefined, scan.resolved),
-            details:
-              action === "call"
-                ? "Finder started a live call"
-                : truncate(scan.finderMessage || "QR code scanned"),
+            details: truncate(action === "call" ? "Finder started a live call" : scan.finderMessage || "QR code scanned"),
+            detailsFull: action === "call" ? "Finder started a live call" : scan.finderMessage || "QR code scanned",
           })
         }
 
@@ -330,10 +381,12 @@ export default function ActivityPage() {
             qrId: valuable?.qrCodeId || qrCodeByValuableId.get(message.valuableId) || "—",
             location: "Unknown",
             contact: message.finderContact || "Not shared",
+            contactFull: message.finderContact || "Not shared",
             action: "message",
             timestamp: message.createdAt || new Date(0).toISOString(),
             status: formatStatus(message.status, false),
             details: truncate(message.content),
+            detailsFull: message.content,
           })
         }
 
@@ -387,9 +440,9 @@ export default function ActivityPage() {
         row.itemName,
         row.qrId,
         row.location,
-        row.contact,
+        row.contactFull,
         row.status,
-        row.details.replace(/"/g, '""'),
+        row.detailsFull.replace(/"/g, '""'),
       ]
         .map((value) => `"${String(value)}"`)
         .join(","),

@@ -51,7 +51,7 @@ export function Footer() {
               </span>
             </Link>
             <p className="mt-4 max-w-xs text-sm text-muted-foreground leading-relaxed">
-              QR-powered smart recovery system for your valuables. Never lose what matters again.
+              QR-powered smart recovery system for your valuables. Never lose what matters!.
             </p>
             <p className="mt-4 max-w-xs text-sm text-muted-foreground leading-relaxed">
               Zestive Ventures
