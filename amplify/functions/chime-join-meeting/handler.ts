@@ -55,7 +55,7 @@ function chimeClient() {
 }
 
 function dynamoClient() {
-  const region = process.env.AWS_REGION || "ap-south-1";
+  const region = process.env.IFOUND_AWS_REGION || "ap-south-1";
   return new DynamoDBClient({ region });
 }
 
@@ -115,7 +115,7 @@ async function putStoredMeeting(roomId: string, meeting: any, ttl: number) {
 
 async function createAndStoreMeeting(roomId: string) {
   const mediaRegion =
-    process.env.CHIME_MEDIA_REGION || process.env.AWS_REGION || "ap-south-1";
+    process.env.CHIME_MEDIA_REGION || process.env.IFOUND_AWS_REGION || "ap-south-1";
 
   const meetingRes = await chimeClient().send(
     new CreateMeetingCommand({

@@ -15,7 +15,7 @@ import { unmarshall, marshall } from "@aws-sdk/util-dynamodb";
 
 const USER_TABLE = process.env.USER_TABLE_NAME || "";
 const USER_POOL_ID = process.env.USER_POOL_ID || "";
-const REGION = process.env.AWS_REGION || "ap-south-1";
+const REGION = process.env.IFOUND_AWS_REGION || "ap-south-1";
 
 if (!USER_TABLE || !USER_POOL_ID) {
   throw new Error("Missing USER_TABLE_NAME or USER_POOL_ID env var");

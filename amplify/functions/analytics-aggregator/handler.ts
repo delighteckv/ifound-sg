@@ -6,7 +6,7 @@ import {
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 
 const dynamo = new DynamoDBClient({
-  region: process.env.AWS_REGION || "ap-south-1",
+  region: process.env.IFOUND_AWS_REGION || "ap-south-1",
 });
 
 const ANALYTICS_TABLE_NAME = process.env.IFOUND_ANALYTICS_TABLE_NAME || "";
