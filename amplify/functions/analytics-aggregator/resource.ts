@@ -5,4 +5,7 @@ export const analyticsAggregator = defineFunction({
   entry: "./handler.ts",
   timeoutSeconds: 30,
   resourceGroupName: "data",
+
+
+  IFOUND_AWS_REGION
 });
