@@ -43,13 +43,38 @@ function ttlSeconds() {
   return Number.isFinite(v) && v > 300 ? v : 14400;
 }
 
+function isUsableRegion(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  if (!v) return false;
+  if (v.includes("<value will be resolved during runtime>")) return false;
+  return /^[a-z]{2}-[a-z]+-\d$/.test(v);
+}
+
+function resolveRegion(...candidates: Array<unknown>) {
+  for (const c of candidates) {
+    if (isUsableRegion(c)) return c.trim();
+  }
+  return undefined;
+}
+
 function chimeClient() {
-  const region = process.env.CHIME_MEETINGS_REGION || "us-east-1";
+  const region = resolveRegion(
+    process.env.CHIME_MEETINGS_REGION,
+    process.env.AWS_REGION,
+    process.env.AWS_DEFAULT_REGION,
+    "us-east-1"
+  );
   return new ChimeSDKMeetingsClient({ region });
 }
 
 function dynamoClient() {
-  const region = process.env.IFOUND_AWS_REGION || "ap-south-1";
+  const region = resolveRegion(
+    process.env.IFOUND_AWS_REGION,
+    process.env.AWS_REGION,
+    process.env.AWS_DEFAULT_REGION,
+    "ap-south-1"
+  );
   console.log("dynamoClient region:", region);
   return new DynamoDBClient({ region });
 }
@@ -134,8 +159,13 @@ export const handler: Handler = async (event) => {
       return { meeting: JSON.stringify(stored.meeting) };
     }
 
-    const mediaRegion =
-      process.env.CHIME_MEDIA_REGION || process.env.IFOUND_AWS_REGION || "ap-south-1";
+    const mediaRegion = resolveRegion(
+      process.env.CHIME_MEDIA_REGION,
+      process.env.IFOUND_AWS_REGION,
+      process.env.AWS_REGION,
+      process.env.AWS_DEFAULT_REGION,
+      "ap-south-1"
+    );
 
     const meetingRes = await chimeClient().send(
       new CreateMeetingCommand({

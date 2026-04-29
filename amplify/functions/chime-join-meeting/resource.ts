@@ -12,6 +12,6 @@ export const chimeJoinMeeting = defineFunction({
     CHIME_MEETING_TTL_SECONDS: secret("CHIME_MEETING_TTL_SECONDS"),
     APPLICATION_ID_FOR_TABLE: secret('APPLICATION_ID_FOR_TABLE'),
     PLATFORM_FOR_TABLE: secret('PLATFORM_FOR_TABLE'),
-    IFOUND_AWS_REGION: secret('PLATFORM_FOR_TABLE'),
+    IFOUND_AWS_REGION: secret('IFOUND_AWS_REGION'),
   },
 });

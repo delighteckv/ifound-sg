@@ -13,7 +13,11 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { unmarshall, marshall } from "@aws-sdk/util-dynamodb";
 
-const USER_TABLE = process.env.USER_TABLE_NAME || "";
+const appid = process.env.APPLICATION_ID_FOR_TABLE;
+const platform = process.env.PLATFORM_FOR_TABLE;
+const USER_TABLE_NAME = `User-${appid}-${platform}`
+
+const USER_TABLE = USER_TABLE_NAME
 const USER_POOL_ID = process.env.USER_POOL_ID || "";
 const REGION = process.env.IFOUND_AWS_REGION || "ap-south-1";
 
