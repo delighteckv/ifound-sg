@@ -1651,6 +1651,18 @@
               "list",
               "write",
               "delete"
+            ],
+            "groupsAdmin": [
+              "get",
+              "list",
+              "write",
+              "delete"
+            ],
+            "groupsOwner": [
+              "get",
+              "list",
+              "write",
+              "delete"
             ]
           },
           "protected/*": {

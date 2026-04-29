@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
 import { fetchAuthSession } from "aws-amplify/auth"
+import { getUrl, uploadData } from "aws-amplify/storage"
 import outputs from "@/amplify_outputs.json"
 import { DataTable, type Column } from "@/components/dashboard/data-table"
 import { Badge } from "@/components/ui/badge"
@@ -93,7 +94,7 @@ type QRRow = {
   serialNumber?: string
   category: string
   owner: string
-  packOwnerId?: string
+  packOwnerId?: string | null
   status: "active" | "inactive" | "unassigned"
   scans: number
   lastScanned: string | null
@@ -370,11 +371,35 @@ async function uploadQrPng(code: string, payload: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, payload }),
   })
-  const json = await response.json().catch(() => null)
   if (!response.ok) {
+    const json = await response.json().catch(() => null)
     throw new Error(json?.error || "Unable to upload QR image")
   }
-  return json as { publicUrl: string }
+
+  const blob = await response.blob()
+  const path = `public/qr-codes/${code}.png`
+
+  await uploadData({
+    path,
+    data: blob,
+    options: {
+      contentType: "image/png",
+      metadata: {
+        qrCode: code,
+      },
+    },
+  }).result
+
+  const url = await getUrl({
+    path,
+    options: {
+      expiresIn: 3600,
+      contentDisposition: `attachment; filename="${code}.png"`,
+      contentType: "image/png",
+    },
+  })
+
+  return { publicUrl: url.url.toString() }
 }
 
 function statusFromQr(record: QrRecord): QRRow["status"] {
@@ -493,7 +518,7 @@ export default function QRCodesPage() {
             itemName: qr.label || (qr.status === "UNASSIGNED" ? "Awaiting registration" : "Registered item"),
             category: qr.status === "UNASSIGNED" ? "Inventory" : "Assigned",
             owner: qr.packOwnerId ? ownerLabelMap.get(qr.packOwnerId) || qr.packOwnerId.slice(0, 8) : "Not assigned",
-            packOwnerId: qr.packOwnerId || undefined,
+            packOwnerId: qr.packOwnerId || null,
             status: statusFromQr(qr),
             scans: 0,
             lastScanned: null,
@@ -523,7 +548,7 @@ export default function QRCodesPage() {
         const current = scanStats.get(scan.qrCodeId) ?? { scans: 0, lastScanned: null }
         current.scans += 1
         if (!current.lastScanned || (scan.scannedAt && scan.scannedAt > current.lastScanned)) {
-          current.lastScanned = scan.scannedAt
+          current.lastScanned = scan.scannedAt || null
         }
         scanStats.set(scan.qrCodeId, current)
       }
@@ -537,7 +562,7 @@ export default function QRCodesPage() {
           serialNumber: valuable?.serialNumber || "",
           category: valuable?.category || (qr.status === "UNASSIGNED" ? "Purchased pack" : "Other"),
           owner: currentOwnerLabel,
-          packOwnerId: qr.packOwnerId || undefined,
+          packOwnerId: qr.packOwnerId || null,
           status: statusFromQr(qr),
           scans: stats.scans,
           lastScanned: stats.lastScanned,
