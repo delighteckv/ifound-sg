@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "next/navigation"
 import { motion } from "framer-motion"
+import { getUrl } from "aws-amplify/storage"
 import {
   Phone,
   MessageSquare,
@@ -62,6 +63,7 @@ type ValuableRecord = {
   description?: string | null
   category?: string | null
   status?: string | null
+  images?: (string | null)[] | null
 }
 
 type UserRecord = {
@@ -115,6 +117,7 @@ const getValuableQuery = /* GraphQL */ `
       description
       category
       status
+      images
     }
   }
 `
@@ -206,6 +209,7 @@ export default function FoundItemPage() {
   const [item, setItem] = useState<FoundPageData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState("")
+  const [itemImageUrl, setItemImageUrl] = useState("")
   const [showMessageDialog, setShowMessageDialog] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [showCallDialog, setShowCallDialog] = useState(false)
@@ -283,6 +287,41 @@ export default function FoundItemPage() {
       active = false
     }
   }, [qrCodeId])
+
+  useEffect(() => {
+    let active = true
+
+    const loadImage = async () => {
+      const imagePath = item?.valuable?.images?.find(Boolean)
+      if (!imagePath) {
+        if (active) setItemImageUrl("")
+        return
+      }
+
+      try {
+        const result = await getUrl({
+          path: imagePath,
+          options: {
+            expiresIn: 3600,
+          },
+        })
+
+        if (active) {
+          setItemImageUrl(result.url.toString())
+        }
+      } catch {
+        if (active) {
+          setItemImageUrl("")
+        }
+      }
+    }
+
+    void loadImage()
+
+    return () => {
+      active = false
+    }
+  }, [item?.valuable?.images])
 
   useEffect(() => {
     if (!item || hasRecordedInitialScanRef.current) {
@@ -601,6 +640,15 @@ export default function FoundItemPage() {
             </motion.div>
 
             <div className="mb-8 text-center">
+              {itemImageUrl ? (
+                <div className="mb-5 overflow-hidden rounded-2xl border border-border/50 bg-secondary/30">
+                  <img
+                    src={itemImageUrl}
+                    alt={item.valuable?.name || item.qrCode.label || "Found item"}
+                    className="h-56 w-full object-cover"
+                  />
+                </div>
+              ) : null}
               <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
                 {item.valuable?.name || item.qrCode.label || "Registered item"}
               </h1>

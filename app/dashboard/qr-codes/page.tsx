@@ -71,6 +71,7 @@ type ValuableRecord = {
   status?: string | null
   qrCodeId?: string | null
   qrCodeValue?: string | null
+  images?: (string | null)[] | null
   createdAt?: string | null
   updatedAt?: string | null
 }
@@ -100,6 +101,7 @@ type QRRow = {
   lastScanned: string | null
   createdAt: string
   description?: string
+  imagePath?: string | null
   valuableId?: string
   packId?: string
   packLabel?: string
@@ -243,6 +245,7 @@ const valuablesByOwnerQuery = /* GraphQL */ `
         status
         qrCodeId
         qrCodeValue
+        images
         createdAt
         updatedAt
       }
@@ -402,6 +405,29 @@ async function uploadQrPng(code: string, payload: string) {
   return { publicUrl: url.url.toString() }
 }
 
+function sanitizeFileNamePart(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "-")
+}
+
+async function uploadItemImage(ownerId: string, file: File) {
+  const extension = sanitizeFileNamePart(file.name.split(".").pop() || "jpg")
+  const path = `public/item-images/${ownerId}/${crypto.randomUUID()}.${extension}`
+
+  await uploadData({
+    path,
+    data: file,
+    options: {
+      contentType: file.type || "application/octet-stream",
+      metadata: {
+        ownerId,
+        originalName: file.name,
+      },
+    },
+  }).result
+
+  return path
+}
+
 function statusFromQr(record: QrRecord): QRRow["status"] {
   if (record.status === "UNASSIGNED") return "unassigned"
   if (record.status === "RETIRED") return "inactive"
@@ -429,6 +455,8 @@ export default function QRCodesPage() {
   const [selectedRow, setSelectedRow] = useState<QRRow | null>(null)
   const [ownerOptions, setOwnerOptions] = useState<UserRecord[]>([])
   const [itemForm, setItemForm] = useState<ItemFormState>({ qrCode: "", itemName: "", serialNumber: "", category: "", description: "" })
+  const [itemImageFile, setItemImageFile] = useState<File | null>(null)
+  const [itemImagePreview, setItemImagePreview] = useState<string>("")
   const [packForm, setPackForm] = useState<PackFormState>({ packSize: "4", packsCount: "1", batchLabel: "" })
   const [assignPackForm, setAssignPackForm] = useState<AssignPackFormState>({ packId: "", ownerId: "" })
   const [claimPackId, setClaimPackId] = useState("")
@@ -524,6 +552,7 @@ export default function QRCodesPage() {
             lastScanned: null,
             createdAt: qr.createdAt || new Date().toISOString(),
             description: "",
+            imagePath: null,
             valuableId: qr.valuableId || undefined,
             packId: qr.packId || undefined,
             packLabel: qr.packId ? `${qr.batchLabel || "Pack"} · ${qr.packId} · ${qr.packPosition || 1}/${qr.packSize || 1}` : undefined,
@@ -568,6 +597,7 @@ export default function QRCodesPage() {
           lastScanned: stats.lastScanned,
           createdAt: qr.createdAt || valuable?.createdAt || new Date().toISOString(),
           description: valuable?.description || "",
+          imagePath: valuable?.images?.find(Boolean) || null,
           valuableId: qr.valuableId || undefined,
           packId: qr.packId || undefined,
           packLabel: qr.packId ? `${qr.batchLabel || "Pack"} · ${qr.packId} · ${qr.packPosition || 1}/${qr.packSize || 1}` : undefined,
@@ -616,8 +646,31 @@ export default function QRCodesPage() {
     void run()
   }, [])
 
+  useEffect(() => {
+    return () => {
+      if (itemImagePreview.startsWith("blob:")) {
+        URL.revokeObjectURL(itemImagePreview)
+      }
+    }
+  }, [itemImagePreview])
+
+  const handleItemImageChange = (file: File | null) => {
+    if (itemImagePreview.startsWith("blob:")) {
+      URL.revokeObjectURL(itemImagePreview)
+    }
+
+    setItemImageFile(file)
+    if (!file) {
+      setItemImagePreview("")
+      return
+    }
+
+    setItemImagePreview(URL.createObjectURL(file))
+  }
+
   const resetForms = () => {
     setItemForm({ qrCode: "", itemName: "", serialNumber: "", category: "", description: "" })
+    handleItemImageChange(null)
     setPackForm({ packSize: "4", packsCount: "1", batchLabel: "" })
     setAssignPackForm({ packId: "", ownerId: "" })
     setClaimPackId("")
@@ -660,6 +713,7 @@ export default function QRCodesPage() {
       }
 
       const qrValue = buildQrCodeValue(normalizedCode)
+      const imagePath = itemImageFile ? await uploadItemImage(ownerId, itemImageFile) : null
       const valuableResult = await runGraphQL<{ createValuable: { id: string } }>(createValuableMutation, {
         input: {
           ownerId,
@@ -669,6 +723,7 @@ export default function QRCodesPage() {
           category: itemForm.category,
           status: "ACTIVE",
           qrCodeValue: qrValue,
+          images: imagePath ? [imagePath] : [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
@@ -855,6 +910,8 @@ export default function QRCodesPage() {
   const openEdit = (row: QRRow) => {
     setSelectedRow(row)
     setItemForm({ qrCode: row.id, itemName: row.itemName, serialNumber: row.serialNumber || "", category: row.category, description: row.description || "" })
+    setItemImageFile(null)
+    setItemImagePreview(row.imagePath || "")
     setIsEditOpen(true)
   }
 
@@ -868,6 +925,7 @@ export default function QRCodesPage() {
     setError("")
     setSuccess("")
     try {
+      const imagePath = itemImageFile ? await uploadItemImage(ownerId, itemImageFile) : selectedRow.imagePath || null
       await Promise.all([
         runGraphQL(updateValuableMutation, {
           input: {
@@ -876,6 +934,7 @@ export default function QRCodesPage() {
             serialNumber: itemForm.serialNumber.trim() || null,
             description: itemForm.description.trim() || null,
             category: itemForm.category,
+            images: imagePath ? [imagePath] : [],
             updatedAt: new Date().toISOString(),
           },
         }),
@@ -1054,6 +1113,24 @@ export default function QRCodesPage() {
                       <Label>Description</Label>
                       <Input value={itemForm.description} onChange={(event) => setItemForm((current) => ({ ...current, description: event.target.value }))} placeholder="Optional notes" className="h-11 rounded-xl border-border/50 bg-secondary/50" />
                     </div>
+                    <div className="space-y-2">
+                      <Label>Item Image</Label>
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => handleItemImageChange(event.target.files?.[0] || null)}
+                        className="h-11 rounded-xl border-border/50 bg-secondary/50"
+                      />
+                      {itemImagePreview ? (
+                        <img
+                          src={itemImagePreview}
+                          alt="Item preview"
+                          className="h-32 w-full rounded-xl border border-border/50 object-cover"
+                        />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Upload a clear photo of the item to help identify it when found.</p>
+                      )}
+                    </div>
                     <Button onClick={handleRegisterQr} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
                       {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Validate & Register"}
                     </Button>
@@ -1185,6 +1262,24 @@ export default function QRCodesPage() {
             <div className="space-y-2">
               <Label>Description</Label>
               <Input value={itemForm.description} onChange={(event) => setItemForm((current) => ({ ...current, description: event.target.value }))} className="h-11 rounded-xl border-border/50 bg-secondary/50" />
+            </div>
+            <div className="space-y-2">
+              <Label>Item Image</Label>
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(event) => handleItemImageChange(event.target.files?.[0] || null)}
+                className="h-11 rounded-xl border-border/50 bg-secondary/50"
+              />
+              {itemImagePreview ? (
+                <img
+                  src={itemImagePreview}
+                  alt="Item preview"
+                  className="h-32 w-full rounded-xl border border-border/50 object-cover"
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">No image uploaded for this item yet.</p>
+              )}
             </div>
             <Button onClick={handleUpdate} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Changes"}
