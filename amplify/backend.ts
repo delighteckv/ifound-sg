@@ -11,6 +11,7 @@ import { EventSourceMapping, StartingPosition } from "aws-cdk-lib/aws-lambda";
 import { postConfirmation } from "./functions/post-confirmation/resource";
 import { preSignup } from "./functions/pre-signup/resource";
 import { linkUserIdentity } from "./functions/link-user-identity/resource";
+import { adminListCognitoUsers } from "./functions/admin-list-cognito-users/resource";
 
 const backend = defineBackend({
   auth,
@@ -22,6 +23,7 @@ const backend = defineBackend({
   postConfirmation,
   preSignup,
   linkUserIdentity,
+  adminListCognitoUsers,
 });
 
 // Ensure passwordless SMS OTP works by enabling USER_AUTH on the app client
@@ -85,6 +87,16 @@ backend.linkUserIdentity.resources.lambda.addToRolePolicy(
     actions: [
       "cognito-idp:AdminLinkProviderForUser",
       "cognito-idp:AdminUpdateUserAttributes",
+    ],
+    resources: ["*"],
+  }),
+);
+
+backend.adminListCognitoUsers.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: [
+      "cognito-idp:ListUsers",
+      "cognito-idp:AdminListGroupsForUser",
     ],
     resources: ["*"],
   }),

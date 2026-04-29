@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import outputs from "@/amplify_outputs.json"
 import { CognitoJwtVerifier } from "aws-jwt-verify"
-import {
-  AdminListGroupsForUserCommand,
-  CognitoIdentityProviderClient,
-  ListUsersCommand,
-} from "@aws-sdk/client-cognito-identity-provider"
+import AWS from "aws-sdk"
 
-const cognito = new CognitoIdentityProviderClient({
+const awsProfile = process.env.AWS_PROFILE || process.env.AMPLIFY_PROFILE || "default"
+const sharedCredentials = new AWS.SharedIniFileCredentials({ profile: awsProfile })
+const cognito = new AWS.CognitoIdentityServiceProvider({
   region: outputs.auth.aws_region,
+  credentials: sharedCredentials,
 })
 
 const verifier = CognitoJwtVerifier.create({
@@ -35,21 +34,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const result = await cognito.send(
-      new ListUsersCommand({
+    const result = await cognito
+      .listUsers({
         UserPoolId: outputs.auth.user_pool_id,
         Limit: 60,
-      }),
-    )
+      })
+      .promise()
 
     const users = await Promise.all(
       (result.Users || []).map(async (user) => {
-        const groupResult = await cognito.send(
-          new AdminListGroupsForUserCommand({
+        const groupResult = await cognito
+          .adminListGroupsForUser({
             UserPoolId: outputs.auth.user_pool_id,
             Username: user.Username || "",
-          }),
-        )
+          })
+          .promise()
 
         return {
           username: user.Username || "",

@@ -6,6 +6,7 @@ import {
 import { chimeCreateMeeting } from "../functions/chime-create-meeting/resource";
 import { chimeJoinMeeting } from "../functions/chime-join-meeting/resource";
 import { linkUserIdentity } from "../functions/link-user-identity/resource";
+import { adminListCognitoUsers } from "../functions/admin-list-cognito-users/resource";
 
 const UserRole = ["OWNER", "ADMIN"] as const;
 const UserStatus = ["PENDING", "ACTIVE", "INACTIVE"] as const;
@@ -215,6 +216,25 @@ const schema = a.schema({
     providers: a.string().array(),
   }),
 
+  CognitoAdminUser: a.customType({
+    username: a.string(),
+    status: a.string(),
+    enabled: a.boolean(),
+    createdAt: a.datetime(),
+    updatedAt: a.datetime(),
+    email: a.string(),
+    phone: a.string(),
+    name: a.string(),
+    givenName: a.string(),
+    familyName: a.string(),
+    identities: a.string(),
+    groups: a.string().array(),
+  }),
+
+  CognitoAdminListResult: a.customType({
+    users: a.ref("CognitoAdminUser").array(),
+  }),
+
   chimeCreateMeeting: a
     .mutation()
     .arguments({
@@ -239,6 +259,12 @@ const schema = a.schema({
     .returns(a.ref("SyncUserResult"))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(linkUserIdentity)),
+
+  adminListCognitoUsers: a
+    .query()
+    .returns(a.ref("CognitoAdminListResult"))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(adminListCognitoUsers)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

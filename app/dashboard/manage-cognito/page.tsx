@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { fetchAuthSession } from "aws-amplify/auth"
 import { motion } from "framer-motion"
+import outputs from "@/amplify_outputs.json"
 import { DataTable, type Column } from "@/components/dashboard/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,32 @@ interface CognitoUserRow extends Record<string, unknown> {
   enabled: string
   createdAt: string
 }
+
+type GraphQLResponse<T> = {
+  data?: T
+  errors?: { message: string }[]
+}
+
+const adminListCognitoUsersQuery = /* GraphQL */ `
+  query AdminListCognitoUsers {
+    adminListCognitoUsers {
+      users {
+        username
+        status
+        enabled
+        createdAt
+        updatedAt
+        email
+        phone
+        name
+        givenName
+        familyName
+        identities
+        groups
+      }
+    }
+  }
+`
 
 const columns: Column<CognitoUserRow>[] = [
   {
@@ -110,23 +137,28 @@ export default function ManageCognitoPage() {
       setIsLoading(true)
       setError("")
       const session = await fetchAuthSession()
-      const accessToken = session.tokens?.accessToken?.toString()
-      if (!accessToken) {
-        throw new Error("Missing access token")
+      const idToken = session.tokens?.idToken?.toString()
+      if (!idToken) {
+        throw new Error("Missing session token")
       }
 
-      const response = await fetch("/api/admin/cognito-users", {
+      const response = await fetch(outputs.data.url, {
+        method: "POST",
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          Authorization: idToken,
         },
+        body: JSON.stringify({ query: adminListCognitoUsersQuery }),
       })
 
-      const json = await response.json()
-      if (!response.ok) {
-        throw new Error(json?.error || "Unable to load Cognito users")
+      const json = (await response.json()) as GraphQLResponse<{
+        adminListCognitoUsers?: { users?: any[] | null } | null
+      }>
+      if (!response.ok || json.errors?.length) {
+        throw new Error(json.errors?.[0]?.message || "Unable to load Cognito users")
       }
 
-      const nextRows = (json.users || []).map((user: any) => ({
+      const nextRows = (json.data?.adminListCognitoUsers?.users || []).map((user: any) => ({
         username: user.username,
         name:
           user.name ||
