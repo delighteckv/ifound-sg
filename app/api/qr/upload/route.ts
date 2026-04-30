@@ -14,17 +14,42 @@ function objectKey(code: string) {
   return `public/qr-codes/${code}.png`
 }
 
-async function createSticker(code: string, payload: string) {
-  const qrDataUrl = await QRCode.toDataURL(payload, {
+function renderQrMatrix(payload: string, size: number) {
+  const qr = QRCode.create(payload, {
     errorCorrectionLevel: "H",
-    margin: 1,
-    width: 460,
-    color: {
-      dark: FOREGROUND,
-      light: "#FFFFFF",
-    },
   })
+  const moduleCount = qr.modules.size
+  const cellSize = Math.floor(size / (moduleCount + 2))
+  const actualSize = cellSize * moduleCount
+  const quietZone = cellSize
 
+  return createElement(
+    "div",
+    {
+      style: {
+        width: quietZone * 2 + actualSize,
+        height: quietZone * 2 + actualSize,
+        display: "flex",
+        flexWrap: "wrap",
+        background: "#FFFFFF",
+        padding: quietZone,
+        boxSizing: "border-box",
+      },
+    },
+    ...Array.from({ length: moduleCount * moduleCount }, (_, index) =>
+      createElement("div", {
+        key: `cell-${index}`,
+        style: {
+          width: cellSize,
+          height: cellSize,
+          background: qr.modules.data[index] ? FOREGROUND : "#FFFFFF",
+        },
+      }),
+    ),
+  )
+}
+
+async function createSticker(code: string, payload: string) {
   const response = new ImageResponse(
     createElement(
       "div",
@@ -85,7 +110,7 @@ async function createSticker(code: string, payload: string) {
         createElement(
           "div",
           { style: { display: "flex", flexDirection: "column", width: 460 } },
-          createElement("img", { src: qrDataUrl, width: "460", height: "460", alt: "QR code" }),
+          renderQrMatrix(payload, 460),
           createElement(
             "div",
             { style: { display: "flex", justifyContent: "center", marginTop: -10, fontSize: 84, fontWeight: 900 } },

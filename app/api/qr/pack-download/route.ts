@@ -14,16 +14,39 @@ const BACKGROUND = "#FFFFFF"
 const FOREGROUND = "#111111"
 const ACCENT = "#39FF14"
 
-async function qrDataUrl(payload: string, width = 280) {
-  return QRCode.toDataURL(payload, {
+function renderQrMatrix(payload: string, size: number) {
+  const qr = QRCode.create(payload, {
     errorCorrectionLevel: "H",
-    margin: 1,
-    width,
-    color: {
-      dark: FOREGROUND,
-      light: "#FFFFFF",
-    },
   })
+  const moduleCount = qr.modules.size
+  const cellSize = Math.max(2, Math.floor(size / (moduleCount + 2)))
+  const actualSize = cellSize * moduleCount
+  const quietZone = cellSize
+
+  return createElement(
+    "div",
+    {
+      style: {
+        width: quietZone * 2 + actualSize,
+        height: quietZone * 2 + actualSize,
+        display: "flex",
+        flexWrap: "wrap",
+        background: "#FFFFFF",
+        padding: quietZone,
+        boxSizing: "border-box",
+      },
+    },
+    ...Array.from({ length: moduleCount * moduleCount }, (_, index) =>
+      createElement("div", {
+        key: `cell-${index}`,
+        style: {
+          width: cellSize,
+          height: cellSize,
+          background: qr.modules.data[index] ? FOREGROUND : "#FFFFFF",
+        },
+      }),
+    ),
+  )
 }
 
 function chunk<T>(items: T[], size: number) {
@@ -45,12 +68,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "packId, baseUrl, and codes are required" }, { status: 400 })
     }
 
-    const packQr = await qrDataUrl(packId, 320)
     const codeQrs = await Promise.all(
       codes.map(async (item) => ({
         code: String(item.code || "").trim().toUpperCase(),
         position: item.position || null,
-        qr: await qrDataUrl(`${baseUrl}/found/${encodeURIComponent(String(item.code || "").trim().toUpperCase())}`, 240),
+        payload: `${baseUrl}/found/${encodeURIComponent(String(item.code || "").trim().toUpperCase())}`,
       })),
     )
 
@@ -102,7 +124,7 @@ export async function POST(req: NextRequest) {
                 borderRadius: 24,
               },
             },
-            createElement("img", { src: packQr, width: "320", height: "320", alt: `Pack ${packId}` }),
+            renderQrMatrix(packId, 320),
             createElement("div", { style: { fontSize: 28, fontWeight: 800 } }, "Pack Claim QR"),
             createElement("div", { style: { fontSize: 20, color: "#555555" } }, "Scan or enter this pack ID to claim"),
           ),
@@ -148,7 +170,7 @@ export async function POST(req: NextRequest) {
                     },
                   },
                   createElement("div", { style: { fontSize: 22, fontWeight: 900, color: FOREGROUND } }, item.code),
-                  createElement("img", { src: item.qr, width: "240", height: "240", alt: item.code }),
+                  renderQrMatrix(item.payload, 240),
                   createElement(
                     "div",
                     { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4 } },
