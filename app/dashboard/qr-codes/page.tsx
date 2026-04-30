@@ -36,7 +36,10 @@ import {
   Power,
   PowerOff,
   QrCode,
+  ShieldPlus,
+  Trash2,
 } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 
 type GraphQLResponse<T> = {
   data?: T
@@ -90,6 +93,36 @@ type UserRecord = {
   lastName?: string | null
 }
 
+type AccessRecord = {
+  id: string
+  ownerId: string
+  valuableId: string
+  granteeUserId: string
+  granteeEmail?: string | null
+  canViewScanInfo?: boolean | null
+  canReceiveNotifications?: boolean | null
+  canReceiveCalls?: boolean | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+type AccessInviteRecord = {
+  code: string
+  ownerId: string
+  valuableId: string
+  canViewScanInfo?: boolean | null
+  canReceiveNotifications?: boolean | null
+  canReceiveCalls?: boolean | null
+  status?: string | null
+  createdByUserId?: string | null
+  acceptedByUserId?: string | null
+  createdAt?: string | null
+  expiresAt?: string | null
+  acceptedAt?: string | null
+  rejectedAt?: string | null
+  cancelledAt?: string | null
+}
+
 type QRRow = {
   id: string
   qrImagePath?: string | null
@@ -128,6 +161,12 @@ type PackFormState = {
 type AssignPackFormState = {
   packId: string
   ownerId: string
+}
+
+type AccessFormState = {
+  canViewScanInfo: boolean
+  canReceiveNotifications: boolean
+  canReceiveCalls: boolean
 }
 
 const CATEGORIES = [
@@ -286,6 +325,48 @@ const usersByRoleQuery = /* GraphQL */ `
   }
 `
 
+const valuableAccessByValuableQuery = /* GraphQL */ `
+  query ValuableAccessByValuable($valuableId: ID!, $limit: Int) {
+    ValuableAccessByValuable(valuableId: $valuableId, limit: $limit) {
+      items {
+        id
+        ownerId
+        valuableId
+        granteeUserId
+        granteeEmail
+        canViewScanInfo
+        canReceiveNotifications
+        canReceiveCalls
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`
+
+const valuableAccessInvitesByValuableQuery = /* GraphQL */ `
+  query ValuableAccessInvitesByValuable($valuableId: ID!, $limit: Int) {
+    ValuableAccessInvitesByValuable(valuableId: $valuableId, limit: $limit) {
+      items {
+        code
+        ownerId
+        valuableId
+        canViewScanInfo
+        canReceiveNotifications
+        canReceiveCalls
+        status
+        createdByUserId
+        acceptedByUserId
+        createdAt
+        expiresAt
+        acceptedAt
+        rejectedAt
+        cancelledAt
+      }
+    }
+  }
+`
+
 const getQrCodeQuery = /* GraphQL */ `
   query GetQrCode($code: String!) {
     getQrCode(code: $code) {
@@ -343,6 +424,46 @@ const updateQrCodeMutation = /* GraphQL */ `
   }
 `
 
+const createValuableAccessMutation = /* GraphQL */ `
+  mutation CreateValuableAccess($input: CreateValuableAccessInput!) {
+    createValuableAccess(input: $input) {
+      id
+    }
+  }
+`
+
+const updateValuableAccessMutation = /* GraphQL */ `
+  mutation UpdateValuableAccess($input: UpdateValuableAccessInput!) {
+    updateValuableAccess(input: $input) {
+      id
+    }
+  }
+`
+
+const deleteValuableAccessMutation = /* GraphQL */ `
+  mutation DeleteValuableAccess($input: DeleteValuableAccessInput!) {
+    deleteValuableAccess(input: $input) {
+      id
+    }
+  }
+`
+
+const createValuableAccessInviteMutation = /* GraphQL */ `
+  mutation CreateValuableAccessInvite($input: CreateValuableAccessInviteInput!) {
+    createValuableAccessInvite(input: $input) {
+      code
+    }
+  }
+`
+
+const updateValuableAccessInviteMutation = /* GraphQL */ `
+  mutation UpdateValuableAccessInvite($input: UpdateValuableAccessInviteInput!) {
+    updateValuableAccessInvite(input: $input) {
+      code
+    }
+  }
+`
+
 function buildHeaders() {
   return {
     "Content-Type": "application/json",
@@ -373,6 +494,10 @@ function generateQrCodeCode() {
 
 function generatePackId() {
   return `PACK-${crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`
+}
+
+function generateAccessInviteCode() {
+  return `IFD-${crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`
 }
 
 function buildQrCodeValue(code: string) {
@@ -475,14 +600,23 @@ export default function QRCodesPage() {
   const [isPackOpen, setIsPackOpen] = useState(false)
   const [isClaimPackOpen, setIsClaimPackOpen] = useState(false)
   const [isAssignPackOpen, setIsAssignPackOpen] = useState(false)
+  const [isAccessOpen, setIsAccessOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [selectedRow, setSelectedRow] = useState<QRRow | null>(null)
   const [ownerOptions, setOwnerOptions] = useState<UserRecord[]>([])
+  const [accessEntries, setAccessEntries] = useState<AccessRecord[]>([])
+  const [inviteEntries, setInviteEntries] = useState<AccessInviteRecord[]>([])
+  const [latestInviteCode, setLatestInviteCode] = useState("")
   const [itemForm, setItemForm] = useState<ItemFormState>({ qrCode: "", itemName: "", serialNumber: "", category: "", description: "" })
   const [itemImageFile, setItemImageFile] = useState<File | null>(null)
   const [itemImagePreview, setItemImagePreview] = useState<string>("")
   const [packForm, setPackForm] = useState<PackFormState>({ packSize: "4", packsCount: "1", batchLabel: "" })
   const [assignPackForm, setAssignPackForm] = useState<AssignPackFormState>({ packId: "", ownerId: "" })
+  const [accessForm, setAccessForm] = useState<AccessFormState>({
+    canViewScanInfo: true,
+    canReceiveNotifications: true,
+    canReceiveCalls: true,
+  })
   const [claimPackId, setClaimPackId] = useState("")
   const ownerLabelMap = useMemo(
     () => new Map(ownerOptions.map((user) => [user.cognitoId, getUserLabel(user)])),
@@ -582,7 +716,7 @@ export default function QRCodesPage() {
             imagePath: null,
             valuableId: qr.valuableId || undefined,
             packId: qr.packId || undefined,
-            packLabel: qr.packId ? `${qr.batchLabel || "Pack"} · ${qr.packId} · ${qr.packPosition || 1}/${qr.packSize || 1}` : undefined,
+            packLabel: qr.packId ? `${qr.batchLabel || "Pack"} Â· ${qr.packId} Â· ${qr.packPosition || 1}/${qr.packSize || 1}` : undefined,
           }))
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 
@@ -630,7 +764,7 @@ export default function QRCodesPage() {
           imagePath: valuable?.images?.find(Boolean) || null,
           valuableId: qr.valuableId || undefined,
           packId: qr.packId || undefined,
-          packLabel: qr.packId ? `${qr.batchLabel || "Pack"} · ${qr.packId} · ${qr.packPosition || 1}/${qr.packSize || 1}` : undefined,
+          packLabel: qr.packId ? `${qr.batchLabel || "Pack"} Â· ${qr.packId} Â· ${qr.packPosition || 1}/${qr.packSize || 1}` : undefined,
         } satisfies QRRow
       })
 
@@ -703,6 +837,14 @@ export default function QRCodesPage() {
     handleItemImageChange(null)
     setPackForm({ packSize: "4", packsCount: "1", batchLabel: "" })
     setAssignPackForm({ packId: "", ownerId: "" })
+    setAccessForm({
+      canViewScanInfo: true,
+      canReceiveNotifications: true,
+      canReceiveCalls: true,
+    })
+    setAccessEntries([])
+    setInviteEntries([])
+    setLatestInviteCode("")
     setClaimPackId("")
     setSelectedRow(null)
   }
@@ -714,6 +856,148 @@ export default function QRCodesPage() {
     }
     setAssignPackForm({ packId: row.packId, ownerId: row.packOwnerId || "" })
     setIsAssignPackOpen(true)
+  }
+
+  const openAccess = async (row: QRRow) => {
+    if (!row.valuableId) {
+      setError("Register this QR code first before sharing access")
+      return
+    }
+
+    setSelectedRow(row)
+    setIsAccessOpen(true)
+    setError("")
+    setSuccess("")
+    setLatestInviteCode("")
+
+    try {
+      const [accessData, inviteData] = await Promise.all([
+        runGraphQL<{ ValuableAccessByValuable: { items: AccessRecord[] } }>(
+          valuableAccessByValuableQuery,
+          { valuableId: row.valuableId, limit: 100 },
+        ),
+        runGraphQL<{ ValuableAccessInvitesByValuable: { items: AccessInviteRecord[] } }>(
+          valuableAccessInvitesByValuableQuery,
+          { valuableId: row.valuableId, limit: 100 },
+        ),
+      ])
+      setAccessEntries(accessData.ValuableAccessByValuable.items || [])
+      setInviteEntries(
+        (inviteData.ValuableAccessInvitesByValuable.items || []).sort((left, right) =>
+          (right.createdAt || "").localeCompare(left.createdAt || ""),
+        ),
+      )
+    } catch (err: any) {
+      setError(err?.message || "Unable to load shared access")
+    }
+  }
+
+  const handleCreateInvite = async () => {
+    if (!selectedRow?.valuableId) {
+      setError("Select an item first")
+      return
+    }
+
+    if (
+      !accessForm.canViewScanInfo &&
+      !accessForm.canReceiveNotifications &&
+      !accessForm.canReceiveCalls
+    ) {
+      setError("Select at least one permission")
+      return
+    }
+
+    setIsSubmitting(true)
+    setError("")
+    setSuccess("")
+    try {
+      const code = generateAccessInviteCode()
+      await runGraphQL(createValuableAccessInviteMutation, {
+        input: {
+          code,
+          ownerId,
+          valuableId: selectedRow.valuableId,
+          canViewScanInfo: accessForm.canViewScanInfo,
+          canReceiveNotifications: accessForm.canReceiveNotifications,
+          canReceiveCalls: accessForm.canReceiveCalls,
+          status: "PENDING",
+          createdByUserId: ownerId,
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+      })
+
+      const refreshed = await runGraphQL<{ ValuableAccessInvitesByValuable: { items: AccessInviteRecord[] } }>(
+        valuableAccessInvitesByValuableQuery,
+        { valuableId: selectedRow.valuableId, limit: 100 },
+      )
+      setInviteEntries(
+        (refreshed.ValuableAccessInvitesByValuable.items || []).sort((left, right) =>
+          (right.createdAt || "").localeCompare(left.createdAt || ""),
+        ),
+      )
+      setLatestInviteCode(code)
+      setSuccess(`Invitation code ${code} created`)
+    } catch (err: any) {
+      setError(err?.message || "Unable to create invitation")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleCancelInvite = async (invite: AccessInviteRecord) => {
+    setIsSubmitting(true)
+    setError("")
+    setSuccess("")
+    try {
+      await runGraphQL(updateValuableAccessInviteMutation, {
+        input: {
+          code: invite.code,
+          status: "CANCELLED",
+          cancelledAt: new Date().toISOString(),
+        },
+      })
+
+      const refreshed = await runGraphQL<{ ValuableAccessInvitesByValuable: { items: AccessInviteRecord[] } }>(
+        valuableAccessInvitesByValuableQuery,
+        { valuableId: selectedRow?.valuableId, limit: 100 },
+      )
+      setInviteEntries(
+        (refreshed.ValuableAccessInvitesByValuable.items || []).sort((left, right) =>
+          (right.createdAt || "").localeCompare(left.createdAt || ""),
+        ),
+      )
+      setSuccess(`Invitation ${invite.code} cancelled`)
+    } catch (err: any) {
+      setError(err?.message || "Unable to cancel invitation")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleRemoveAccess = async (entry: AccessRecord) => {
+    if (!selectedRow?.valuableId) return
+    setIsSubmitting(true)
+    setError("")
+    setSuccess("")
+    try {
+      await runGraphQL(deleteValuableAccessMutation, {
+        input: {
+          id: entry.id,
+        },
+      })
+
+      const refreshed = await runGraphQL<{ ValuableAccessByValuable: { items: AccessRecord[] } }>(
+        valuableAccessByValuableQuery,
+        { valuableId: selectedRow.valuableId, limit: 100 },
+      )
+      setAccessEntries(refreshed.ValuableAccessByValuable.items || [])
+      setSuccess(`Removed access for ${entry.granteeEmail || entry.granteeUserId}`)
+    } catch (err: any) {
+      setError(err?.message || "Unable to remove access")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleRegisterQr = async () => {
@@ -1288,6 +1572,10 @@ export default function QRCodesPage() {
                 ) : null}
                 {!isAdmin && row.status !== "unassigned" ? (
                   <>
+                    <DropdownMenuItem className="rounded-lg" onClick={() => void openAccess(row)}>
+                      <ShieldPlus className="mr-2 h-4 w-4" />
+                      Manage Access
+                    </DropdownMenuItem>
                     <DropdownMenuItem className="rounded-lg" onClick={() => openEdit(row)}>
                       <Pencil className="mr-2 h-4 w-4" />
                       Edit Registration
@@ -1336,6 +1624,153 @@ export default function QRCodesPage() {
             <Button onClick={handleAssignPack} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Ownership"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAccessOpen} onOpenChange={setIsAccessOpen}>
+        <DialogContent className="sm:max-w-2xl rounded-2xl">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>Manage Access</DialogTitle>
+            <DialogDescription>
+              Create an invitation code. The other user signs in with any method and accepts this item using the code.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 pt-4">
+            <div className="rounded-xl border border-border/50 bg-secondary/20 p-4">
+              <p className="text-sm font-medium text-foreground">{selectedRow?.itemName || "Selected item"}</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">{selectedRow?.id || ""}</p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-[1.3fr_1fr]">
+              <div className="rounded-xl border border-border/50 bg-secondary/20 p-4 text-sm text-muted-foreground">
+                Share the generated code with the recipient. They can log in with phone, email, Google, or Apple and accept it from their dashboard.
+              </div>
+              <div className="grid gap-2 rounded-xl border border-border/50 bg-secondary/20 p-4">
+                <label className="flex items-center gap-3 text-sm">
+                  <Checkbox
+                    checked={accessForm.canViewScanInfo}
+                    onCheckedChange={(checked) => setAccessForm((current) => ({ ...current, canViewScanInfo: checked === true }))}
+                  />
+                  Scan information
+                </label>
+                <label className="flex items-center gap-3 text-sm">
+                  <Checkbox
+                    checked={accessForm.canReceiveNotifications}
+                    onCheckedChange={(checked) => setAccessForm((current) => ({ ...current, canReceiveNotifications: checked === true }))}
+                  />
+                  Finder messages
+                </label>
+                <label className="flex items-center gap-3 text-sm">
+                  <Checkbox
+                    checked={accessForm.canReceiveCalls}
+                    onCheckedChange={(checked) => setAccessForm((current) => ({ ...current, canReceiveCalls: checked === true }))}
+                  />
+                  Live calls
+                </label>
+              </div>
+            </div>
+
+            <Button onClick={handleCreateInvite} disabled={isSubmitting} className="h-11 w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Invitation Code"}
+            </Button>
+
+            {latestInviteCode ? (
+              <div className="rounded-xl border border-primary/30 bg-primary/10 p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Latest invitation code</p>
+                <p className="mt-2 font-mono text-lg font-semibold text-foreground">{latestInviteCode}</p>
+                <p className="mt-1 text-xs text-muted-foreground">This code is valid for 7 days unless cancelled.</p>
+              </div>
+            ) : null}
+
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-medium text-foreground">Pending invitations</h3>
+                <p className="text-xs text-muted-foreground">
+                  Recipients must sign in and accept the code before access becomes active.
+                </p>
+              </div>
+              {inviteEntries.filter((entry) => entry.status === "PENDING").length ? (
+                <div className="space-y-3">
+                  {inviteEntries
+                    .filter((entry) => entry.status === "PENDING")
+                    .map((entry) => (
+                    <div key={entry.code} className="flex flex-col gap-3 rounded-xl border border-border/50 bg-secondary/20 p-4 md:flex-row md:items-center md:justify-between">
+                      <div className="space-y-1">
+                        <p className="font-mono text-sm font-medium text-foreground">{entry.code}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[
+                            entry.canViewScanInfo ? "Scan info" : null,
+                            entry.canReceiveNotifications ? "Messages" : null,
+                            entry.canReceiveCalls ? "Calls" : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Created {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "recently"}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        className="rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10"
+                        onClick={() => void handleCancelInvite(entry)}
+                        disabled={isSubmitting}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Cancel
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-border/50 bg-secondary/20 p-4 text-sm text-muted-foreground">
+                  No pending invitations for this item.
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-medium text-foreground">Active access</h3>
+                <p className="text-xs text-muted-foreground">
+                  These users already accepted an invitation and can access this item according to the listed permissions.
+                </p>
+              </div>
+              {accessEntries.length ? (
+                <div className="space-y-3">
+                  {accessEntries.map((entry) => (
+                    <div key={entry.id} className="flex flex-col gap-3 rounded-xl border border-border/50 bg-secondary/20 p-4 md:flex-row md:items-center md:justify-between">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground">{entry.granteeEmail || entry.granteeUserId}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[
+                            entry.canViewScanInfo ? "Scan info" : null,
+                            entry.canReceiveNotifications ? "Messages" : null,
+                            entry.canReceiveCalls ? "Calls" : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        className="rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10"
+                        onClick={() => void handleRemoveAccess(entry)}
+                        disabled={isSubmitting}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-border/50 bg-secondary/20 p-4 text-sm text-muted-foreground">
+                  No active shared users for this item yet.
+                </div>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -1399,3 +1834,4 @@ export default function QRCodesPage() {
     </div>
   )
 }
+

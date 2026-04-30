@@ -17,6 +17,7 @@ const MessageChannel = ["CALL", "SMS", "WHATSAPP", "IN_APP"] as const;
 const DevicePlatform = ["APNS", "GCM"] as const;
 const SubscriptionStatus = ["ACTIVE", "PAST_DUE", "CANCELLED", "EXPIRED"] as const;
 const PaymentStatus = ["PENDING", "PAID", "FAILED", "REFUNDED"] as const;
+const AccessInviteStatus = ["PENDING", "ACCEPTED", "REJECTED", "CANCELLED", "EXPIRED"] as const;
 
 const schema = a.schema({
   AnalyticsStats: a
@@ -51,7 +52,7 @@ const schema = a.schema({
       index("phone").queryField("UsersByPhone"),
       index("role").queryField("UsersByRole"),
     ])
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
 
   Valuable: a
     .model({
@@ -71,11 +72,57 @@ const schema = a.schema({
       index("ownerId").queryField("ValuablesByOwner"),
       index("status").queryField("ValuablesByStatus"),
     ])
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
+
+  ValuableAccess: a
+    .model({
+      ownerId: a.id().required(),
+      valuableId: a.id().required(),
+      granteeUserId: a.id().required(),
+      granteeEmail: a.string(),
+      canViewScanInfo: a.boolean().default(true),
+      canReceiveNotifications: a.boolean().default(true),
+      canReceiveCalls: a.boolean().default(false),
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+    })
+    .secondaryIndexes((index) => [
+      index("ownerId").queryField("ValuableAccessByOwner"),
+      index("valuableId").queryField("ValuableAccessByValuable"),
+      index("granteeUserId").queryField("ValuableAccessByGrantee"),
+    ])
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
+
+  ValuableAccessInvite: a
+    .model({
+      code: a.string().required(),
+      ownerId: a.id().required(),
+      valuableId: a.id().required(),
+      canViewScanInfo: a.boolean().default(true),
+      canReceiveNotifications: a.boolean().default(true),
+      canReceiveCalls: a.boolean().default(false),
+      status: a.enum(AccessInviteStatus),
+      createdByUserId: a.id(),
+      acceptedByUserId: a.id(),
+      createdAt: a.datetime(),
+      expiresAt: a.datetime(),
+      acceptedAt: a.datetime(),
+      rejectedAt: a.datetime(),
+      cancelledAt: a.datetime(),
+    })
+    .identifier(["code"])
+    .secondaryIndexes((index) => [
+      index("ownerId").queryField("ValuableAccessInvitesByOwner"),
+      index("valuableId").queryField("ValuableAccessInvitesByValuable"),
+      index("acceptedByUserId").queryField("ValuableAccessInvitesByAcceptedUser"),
+      index("status").queryField("ValuableAccessInvitesByStatus"),
+    ])
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
 
   QrCode: a
     .model({
       code: a.string().required(),
+      qrImagePath: a.string(),
       packId: a.string(),
       packSize: a.integer(),
       packPosition: a.integer(),
@@ -99,7 +146,7 @@ const schema = a.schema({
       index("valuableId").queryField("QrCodesByValuable"),
       index("status").queryField("QrCodesByStatus"),
     ])
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
 
   ScanEvent: a
     .model({
@@ -121,7 +168,7 @@ const schema = a.schema({
       index("ownerId").queryField("ScansByOwner"),
       index("scannedAt").queryField("ScansByDate"),
     ])
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
 
   Message: a
     .model({
@@ -138,7 +185,7 @@ const schema = a.schema({
       index("ownerId").queryField("MessagesByOwner"),
       index("createdAt").queryField("MessagesByDate"),
     ])
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
 
   DeviceToken: a
     .model({
@@ -152,7 +199,7 @@ const schema = a.schema({
       index("userId").queryField("DeviceTokensByUserId"),
       index(["userId", "updatedAt"]).queryField("DeviceTokensByUserIdAndUpdatedAt"),
     ])
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
 
   OwnerSubscription: a
     .model({

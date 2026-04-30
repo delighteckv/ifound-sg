@@ -16,6 +16,7 @@ type GraphQLResponse<T> = {
 
 type ValuableRecord = {
   id: string
+  ownerId: string
   name: string
   category?: string | null
   qrCodeId?: string | null
@@ -49,6 +50,20 @@ type MessageRecord = {
   status?: string | null
 }
 
+type AccessRecord = {
+  valuableId: string
+  canViewScanInfo?: boolean | null
+  canReceiveNotifications?: boolean | null
+}
+
+type UserRecord = {
+  cognitoId: string
+  displayName?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  email?: string | null
+}
+
 type ActivityRow = {
   id: string
   itemName: string
@@ -61,6 +76,8 @@ type ActivityRow = {
   status: string
   details: string
   detailsFull: string
+  ownerLabel: string
+  relation: "own" | "shared"
 }
 
 const valuablesByOwnerQuery = /* GraphQL */ `
@@ -68,6 +85,7 @@ const valuablesByOwnerQuery = /* GraphQL */ `
     ValuablesByOwner(ownerId: $ownerId, limit: $limit, nextToken: $nextToken) {
       items {
         id
+        ownerId
         name
         category
         qrCodeId
@@ -88,9 +106,39 @@ const qrCodesByOwnerQuery = /* GraphQL */ `
   }
 `
 
+const qrCodesByValuableQuery = /* GraphQL */ `
+  query QrCodesByValuable($valuableId: ID!, $limit: Int) {
+    QrCodesByValuable(valuableId: $valuableId, limit: $limit) {
+      items {
+        code
+        valuableId
+        label
+      }
+    }
+  }
+`
+
 const scansByOwnerQuery = /* GraphQL */ `
   query ScansByOwner($ownerId: ID!, $limit: Int, $nextToken: String) {
     ScansByOwner(ownerId: $ownerId, limit: $limit, nextToken: $nextToken) {
+      items {
+        id
+        qrCodeId
+        valuableId
+        scannedAt
+        locationText
+        finderContact
+        finderMessage
+        channel
+        resolved
+      }
+    }
+  }
+`
+
+const scansByValuableQuery = /* GraphQL */ `
+  query ScansByValuable($valuableId: ID!, $limit: Int) {
+    ScansByValuable(valuableId: $valuableId, limit: $limit) {
       items {
         id
         qrCodeId
@@ -122,17 +170,65 @@ const messagesByOwnerQuery = /* GraphQL */ `
   }
 `
 
-function buildHeaders() {
-  return {
-    "Content-Type": "application/json",
-    "x-api-key": outputs.data.api_key,
+const messagesByValuableQuery = /* GraphQL */ `
+  query MessagesByValuable($valuableId: ID!, $limit: Int) {
+    MessagesByValuable(valuableId: $valuableId, limit: $limit) {
+      items {
+        id
+        valuableId
+        finderContact
+        content
+        channel
+        createdAt
+        status
+      }
+    }
   }
-}
+`
 
-async function runGraphQL<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+const valuableAccessByGranteeQuery = /* GraphQL */ `
+  query ValuableAccessByGranteeActivity($granteeUserId: ID!, $limit: Int) {
+    ValuableAccessByGrantee(granteeUserId: $granteeUserId, limit: $limit) {
+      items {
+        valuableId
+        canViewScanInfo
+        canReceiveNotifications
+      }
+    }
+  }
+`
+
+const getValuableQuery = /* GraphQL */ `
+  query GetValuableActivity($id: ID!) {
+    getValuable(id: $id) {
+      id
+      ownerId
+      name
+      category
+      qrCodeId
+    }
+  }
+`
+
+const getUserQuery = /* GraphQL */ `
+  query GetUserActivity($cognitoId: ID!) {
+    getUser(cognitoId: $cognitoId) {
+      cognitoId
+      displayName
+      firstName
+      lastName
+      email
+    }
+  }
+`
+
+async function runAuthenticatedGraphQL<T>(accessToken: string, query: string, variables: Record<string, unknown>): Promise<T> {
   const response = await fetch(outputs.data.url, {
     method: "POST",
-    headers: buildHeaders(),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
     body: JSON.stringify({ query, variables }),
   })
 
@@ -149,13 +245,18 @@ async function runGraphQL<T>(query: string, variables: Record<string, unknown>):
 }
 
 function truncate(value?: string | null, max = 60) {
-  if (!value) return "—"
-  return value.length > max ? `${value.slice(0, max - 1)}…` : value
+  if (!value) return "-"
+  return value.length > max ? `${value.slice(0, max - 1)}...` : value
 }
 
 function formatStatus(status?: string | null, resolved?: boolean | null) {
   if (resolved) return "RESOLVED"
   return status || "OPEN"
+}
+
+function getUserLabel(user?: UserRecord | null) {
+  const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim()
+  return user?.displayName || fullName || user?.email || user?.cognitoId || "Owner"
 }
 
 export default function ActivityPage() {
@@ -198,6 +299,9 @@ export default function ActivityPage() {
           <div>
             <p className="font-medium">{row.itemName}</p>
             <p className="font-mono text-xs text-muted-foreground">{row.qrId}</p>
+            <p className="text-xs text-muted-foreground">
+              {row.relation === "shared" ? `Shared by ${row.ownerLabel}` : "Your item"}
+            </p>
           </div>
         ),
       },
@@ -271,7 +375,7 @@ export default function ActivityPage() {
           return (
             <div className="space-y-2">
               <p className={`text-sm ${expanded ? "whitespace-pre-wrap break-words" : ""}`}>
-                {expanded ? row.detailsFull || "—" : row.details || "—"}
+                {expanded ? row.detailsFull || "-" : row.details || "-"}
               </p>
               <div className="flex items-center gap-3">
                 <p className="text-xs text-muted-foreground">{row.status}</p>
@@ -307,29 +411,34 @@ export default function ActivityPage() {
 
         const session = await fetchAuthSession()
         const sub = session.tokens?.idToken?.payload?.sub as string | undefined
-        if (!sub) {
-          throw new Error("Owner session was not available")
+        const accessToken = session.tokens?.accessToken?.toString() || ""
+        if (!sub || !accessToken) {
+          throw new Error("User session was not available")
         }
 
         if (active) {
           setOwnerId(sub)
         }
 
-        const [valuableData, qrData, scanData, messageData] = await Promise.all([
-          runGraphQL<{ ValuablesByOwner: { items: ValuableRecord[] } }>(valuablesByOwnerQuery, {
+        const [valuableData, qrData, scanData, messageData, accessData] = await Promise.all([
+          runAuthenticatedGraphQL<{ ValuablesByOwner: { items: ValuableRecord[] } }>(accessToken, valuablesByOwnerQuery, {
             ownerId: sub,
             limit: 200,
           }),
-          runGraphQL<{ QrCodesByOwner: { items: QrCodeRecord[] } }>(qrCodesByOwnerQuery, {
+          runAuthenticatedGraphQL<{ QrCodesByOwner: { items: QrCodeRecord[] } }>(accessToken, qrCodesByOwnerQuery, {
             ownerId: sub,
             limit: 200,
           }),
-          runGraphQL<{ ScansByOwner: { items: ScanRecord[] } }>(scansByOwnerQuery, {
+          runAuthenticatedGraphQL<{ ScansByOwner: { items: ScanRecord[] } }>(accessToken, scansByOwnerQuery, {
             ownerId: sub,
             limit: 200,
           }),
-          runGraphQL<{ MessagesByOwner: { items: MessageRecord[] } }>(messagesByOwnerQuery, {
+          runAuthenticatedGraphQL<{ MessagesByOwner: { items: MessageRecord[] } }>(accessToken, messagesByOwnerQuery, {
             ownerId: sub,
+            limit: 200,
+          }),
+          runAuthenticatedGraphQL<{ ValuableAccessByGrantee: { items: AccessRecord[] } }>(accessToken, valuableAccessByGranteeQuery, {
+            granteeUserId: sub,
             limit: 200,
           }),
         ])
@@ -338,12 +447,70 @@ export default function ActivityPage() {
         const qrCodes = qrData.QrCodesByOwner.items || []
         const scans = scanData.ScansByOwner.items || []
         const messages = messageData.MessagesByOwner.items || []
+        const accessItems = accessData.ValuableAccessByGrantee.items || []
 
         const valuableById = new Map(valuables.map((valuable) => [valuable.id, valuable]))
         const qrByCode = new Map(qrCodes.map((qr) => [qr.code, qr]))
-        const qrCodeByValuableId = new Map(
-          qrCodes.filter((qr) => qr.valuableId).map((qr) => [qr.valuableId as string, qr.code]),
+        const qrCodeByValuableId = new Map(qrCodes.filter((qr) => qr.valuableId).map((qr) => [qr.valuableId as string, qr.code]))
+        const ownerLabelByValuableId = new Map<string, string>()
+        const relationByValuableId = new Map<string, "own" | "shared">()
+
+        for (const valuable of valuables) {
+          ownerLabelByValuableId.set(valuable.id, "You")
+          relationByValuableId.set(valuable.id, "own")
+        }
+
+        const sharedValuableIds = Array.from(
+          new Set(accessItems.map((item) => item.valuableId).filter(Boolean)),
         )
+
+        for (const valuableId of sharedValuableIds) {
+          const access = accessItems.find((entry) => entry.valuableId === valuableId)
+          if (!access || (!access.canViewScanInfo && !access.canReceiveNotifications)) {
+            continue
+          }
+
+          const valuableResponse = await runAuthenticatedGraphQL<{ getValuable: ValuableRecord | null }>(accessToken, getValuableQuery, { id: valuableId })
+          const valuable = valuableResponse.getValuable
+          if (!valuable) continue
+
+          valuableById.set(valuable.id, valuable)
+          relationByValuableId.set(valuable.id, "shared")
+
+          const [qrResponse, ownerResponse] = await Promise.all([
+            runAuthenticatedGraphQL<{ QrCodesByValuable: { items: QrCodeRecord[] } }>(accessToken, qrCodesByValuableQuery, {
+              valuableId: valuable.id,
+              limit: 20,
+            }),
+            runAuthenticatedGraphQL<{ getUser: UserRecord | null }>(accessToken, getUserQuery, {
+              cognitoId: valuable.ownerId,
+            }),
+          ])
+
+          const qr = qrResponse.QrCodesByValuable.items?.[0]
+          if (qr) {
+            qrCodes.push(qr)
+            qrByCode.set(qr.code, qr)
+            qrCodeByValuableId.set(valuable.id, qr.code)
+          }
+          ownerLabelByValuableId.set(valuable.id, getUserLabel(ownerResponse.getUser))
+
+          if (access.canViewScanInfo) {
+            const sharedScans = await runAuthenticatedGraphQL<{ ScansByValuable: { items: ScanRecord[] } }>(accessToken, scansByValuableQuery, {
+              valuableId: valuable.id,
+              limit: 200,
+            })
+            scans.push(...(sharedScans.ScansByValuable.items || []))
+          }
+
+          if (access.canReceiveNotifications) {
+            const sharedMessages = await runAuthenticatedGraphQL<{ MessagesByValuable: { items: MessageRecord[] } }>(accessToken, messagesByValuableQuery, {
+              valuableId: valuable.id,
+              limit: 200,
+            })
+            messages.push(...(sharedMessages.MessagesByValuable.items || []))
+          }
+        }
 
         const nextRows: ActivityRow[] = []
 
@@ -351,12 +518,12 @@ export default function ActivityPage() {
           const valuable =
             (scan.valuableId ? valuableById.get(scan.valuableId) : undefined) ||
             (scan.qrCodeId ? valuableById.get(qrByCode.get(scan.qrCodeId)?.valuableId || "") : undefined)
-          const qrCode = scan.qrCodeId || valuable?.qrCodeId || qrCodeByValuableId.get(valuable?.id || "") || "—"
-          const itemName = valuable?.name || qrByCode.get(qrCode)?.label || "Registered item"
+          if (!valuable) continue
+
+          const qrCode = scan.qrCodeId || valuable.qrCodeId || qrCodeByValuableId.get(valuable.id) || "-"
+          const itemName = valuable.name || qrByCode.get(qrCode)?.label || "Registered item"
           const action: ActivityRow["action"] = scan.channel === "CALL" ? "call" : "scan"
-          if (scan.channel === "MESSAGE") {
-            continue
-          }
+          if (scan.channel === "MESSAGE") continue
 
           nextRows.push({
             id: `scan-${scan.id}`,
@@ -370,15 +537,19 @@ export default function ActivityPage() {
             status: formatStatus(undefined, scan.resolved),
             details: truncate(action === "call" ? "Finder started a live call" : scan.finderMessage || "QR code scanned"),
             detailsFull: action === "call" ? "Finder started a live call" : scan.finderMessage || "QR code scanned",
+            ownerLabel: ownerLabelByValuableId.get(valuable.id) || "Owner",
+            relation: relationByValuableId.get(valuable.id) || "own",
           })
         }
 
         for (const message of messages) {
           const valuable = valuableById.get(message.valuableId)
+          if (!valuable) continue
+
           nextRows.push({
             id: `message-${message.id}`,
-            itemName: valuable?.name || "Registered item",
-            qrId: valuable?.qrCodeId || qrCodeByValuableId.get(message.valuableId) || "—",
+            itemName: valuable.name || "Registered item",
+            qrId: valuable.qrCodeId || qrCodeByValuableId.get(message.valuableId) || "-",
             location: "Unknown",
             contact: message.finderContact || "Not shared",
             contactFull: message.finderContact || "Not shared",
@@ -387,6 +558,8 @@ export default function ActivityPage() {
             status: formatStatus(message.status, false),
             details: truncate(message.content),
             detailsFull: message.content,
+            ownerLabel: ownerLabelByValuableId.get(valuable.id) || "Owner",
+            relation: relationByValuableId.get(valuable.id) || "own",
           })
         }
 
@@ -432,12 +605,13 @@ export default function ActivityPage() {
   }, [rows])
 
   const exportCsv = () => {
-    const header = ["Timestamp", "Action", "Item", "QR Code", "Location", "Contact", "Status", "Details"]
+    const header = ["Timestamp", "Action", "Item", "Shared By", "QR Code", "Location", "Contact", "Status", "Details"]
     const lines = rows.map((row) =>
       [
         row.timestamp,
         row.action,
         row.itemName,
+        row.relation === "shared" ? row.ownerLabel : "",
         row.qrId,
         row.location,
         row.contactFull,
@@ -452,7 +626,7 @@ export default function ActivityPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.href = url
-    link.download = `activity-${ownerId.slice(0, 8) || "owner"}.csv`
+    link.download = `activity-${ownerId.slice(0, 8) || "user"}.csv`
     link.click()
     URL.revokeObjectURL(url)
   }
@@ -467,7 +641,7 @@ export default function ActivityPage() {
           >
             Scan Activity
           </h1>
-          <p className="text-muted-foreground">Track real scans, calls, and finder messages.</p>
+          <p className="text-muted-foreground">Track scans, finder contacts, and live call attempts for your items and items shared with you.</p>
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <Button
@@ -488,7 +662,7 @@ export default function ActivityPage() {
         className="grid gap-4 sm:grid-cols-3"
       >
         <div className="rounded-xl border border-border/50 bg-card/30 p-4 backdrop-blur-sm">
-          <p className="text-sm text-muted-foreground">{"Today's Scans"}</p>
+          <p className="text-sm text-muted-foreground">Today's Scans</p>
           <p className="mt-1 text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
             {todaysScans}
           </p>
@@ -531,6 +705,14 @@ export default function ActivityPage() {
                   { value: "scan", label: "Scanned" },
                   { value: "call", label: "Called" },
                   { value: "message", label: "Messaged" },
+                ],
+              },
+              {
+                key: "relation",
+                label: "Access",
+                options: [
+                  { value: "own", label: "My items" },
+                  { value: "shared", label: "Shared with me" },
                 ],
               },
             ]}

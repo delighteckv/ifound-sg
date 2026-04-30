@@ -318,6 +318,15 @@
               "properties": {
                 "rules": [
                   {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  },
+                  {
                     "allow": "public",
                     "provider": "apiKey",
                     "operations": [
@@ -460,6 +469,15 @@
               "properties": {
                 "rules": [
                   {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  },
+                  {
                     "allow": "public",
                     "provider": "apiKey",
                     "operations": [
@@ -479,6 +497,350 @@
             "sortKeyFieldNames": []
           }
         },
+        "ValuableAccess": {
+          "name": "ValuableAccess",
+          "fields": {
+            "id": {
+              "name": "id",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "ownerId": {
+              "name": "ownerId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "valuableId": {
+              "name": "valuableId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "granteeUserId": {
+              "name": "granteeUserId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "granteeEmail": {
+              "name": "granteeEmail",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
+            "canViewScanInfo": {
+              "name": "canViewScanInfo",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "canReceiveNotifications": {
+              "name": "canReceiveNotifications",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "canReceiveCalls": {
+              "name": "canReceiveCalls",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "createdAt": {
+              "name": "createdAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "updatedAt": {
+              "name": "updatedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            }
+          },
+          "syncable": true,
+          "pluralName": "ValuableAccesses",
+          "attributes": [
+            {
+              "type": "model",
+              "properties": {}
+            },
+            {
+              "type": "key",
+              "properties": {
+                "name": "valuableAccessesByOwnerId",
+                "queryField": "ValuableAccessByOwner",
+                "fields": [
+                  "ownerId"
+                ]
+              }
+            },
+            {
+              "type": "key",
+              "properties": {
+                "name": "valuableAccessesByValuableId",
+                "queryField": "ValuableAccessByValuable",
+                "fields": [
+                  "valuableId"
+                ]
+              }
+            },
+            {
+              "type": "key",
+              "properties": {
+                "name": "valuableAccessesByGranteeUserId",
+                "queryField": "ValuableAccessByGrantee",
+                "fields": [
+                  "granteeUserId"
+                ]
+              }
+            },
+            {
+              "type": "auth",
+              "properties": {
+                "rules": [
+                  {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  },
+                  {
+                    "allow": "public",
+                    "provider": "apiKey",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "primaryKeyInfo": {
+            "isCustomPrimaryKey": false,
+            "primaryKeyFieldName": "id",
+            "sortKeyFieldNames": []
+          }
+        },
+        "ValuableAccessInvite": {
+          "name": "ValuableAccessInvite",
+          "fields": {
+            "code": {
+              "name": "code",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "ownerId": {
+              "name": "ownerId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "valuableId": {
+              "name": "valuableId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "canViewScanInfo": {
+              "name": "canViewScanInfo",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "canReceiveNotifications": {
+              "name": "canReceiveNotifications",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "canReceiveCalls": {
+              "name": "canReceiveCalls",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "status": {
+              "name": "status",
+              "isArray": false,
+              "type": {
+                "enum": "ValuableAccessInviteStatus"
+              },
+              "isRequired": false,
+              "attributes": []
+            },
+            "createdByUserId": {
+              "name": "createdByUserId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": false,
+              "attributes": []
+            },
+            "acceptedByUserId": {
+              "name": "acceptedByUserId",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": false,
+              "attributes": []
+            },
+            "createdAt": {
+              "name": "createdAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "expiresAt": {
+              "name": "expiresAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "acceptedAt": {
+              "name": "acceptedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "rejectedAt": {
+              "name": "rejectedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "cancelledAt": {
+              "name": "cancelledAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": []
+            },
+            "updatedAt": {
+              "name": "updatedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": [],
+              "isReadOnly": true
+            }
+          },
+          "syncable": true,
+          "pluralName": "ValuableAccessInvites",
+          "attributes": [
+            {
+              "type": "model",
+              "properties": {}
+            },
+            {
+              "type": "key",
+              "properties": {
+                "fields": [
+                  "code"
+                ]
+              }
+            },
+            {
+              "type": "key",
+              "properties": {
+                "name": "valuableAccessInvitesByOwnerId",
+                "queryField": "ValuableAccessInvitesByOwner",
+                "fields": [
+                  "ownerId"
+                ]
+              }
+            },
+            {
+              "type": "key",
+              "properties": {
+                "name": "valuableAccessInvitesByValuableId",
+                "queryField": "ValuableAccessInvitesByValuable",
+                "fields": [
+                  "valuableId"
+                ]
+              }
+            },
+            {
+              "type": "key",
+              "properties": {
+                "name": "valuableAccessInvitesByStatus",
+                "queryField": "ValuableAccessInvitesByStatus",
+                "fields": [
+                  "status"
+                ]
+              }
+            },
+            {
+              "type": "key",
+              "properties": {
+                "name": "valuableAccessInvitesByAcceptedByUserId",
+                "queryField": "ValuableAccessInvitesByAcceptedUser",
+                "fields": [
+                  "acceptedByUserId"
+                ]
+              }
+            },
+            {
+              "type": "auth",
+              "properties": {
+                "rules": [
+                  {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  },
+                  {
+                    "allow": "public",
+                    "provider": "apiKey",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "primaryKeyInfo": {
+            "isCustomPrimaryKey": true,
+            "primaryKeyFieldName": "code",
+            "sortKeyFieldNames": []
+          }
+        },
         "QrCode": {
           "name": "QrCode",
           "fields": {
@@ -487,6 +849,13 @@
               "isArray": false,
               "type": "String",
               "isRequired": true,
+              "attributes": []
+            },
+            "qrImagePath": {
+              "name": "qrImagePath",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
               "attributes": []
             },
             "packId": {
@@ -668,6 +1037,15 @@
               "properties": {
                 "rules": [
                   {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  },
+                  {
                     "allow": "public",
                     "provider": "apiKey",
                     "operations": [
@@ -845,6 +1223,15 @@
               "properties": {
                 "rules": [
                   {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  },
+                  {
                     "allow": "public",
                     "provider": "apiKey",
                     "operations": [
@@ -976,6 +1363,15 @@
               "properties": {
                 "rules": [
                   {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  },
+                  {
                     "allow": "public",
                     "provider": "apiKey",
                     "operations": [
@@ -1066,6 +1462,15 @@
               "type": "auth",
               "properties": {
                 "rules": [
+                  {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  },
                   {
                     "allow": "public",
                     "provider": "apiKey",
@@ -1469,6 +1874,16 @@
             "LOST",
             "FOUND",
             "ARCHIVED"
+          ]
+        },
+        "ValuableAccessInviteStatus": {
+          "name": "ValuableAccessInviteStatus",
+          "values": [
+            "PENDING",
+            "ACCEPTED",
+            "REJECTED",
+            "CANCELLED",
+            "EXPIRED"
           ]
         },
         "QrCodeStatus": {

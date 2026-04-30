@@ -40,6 +40,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import Link from "next/link"
+import { getValuableRoomId } from "@/lib/call-room"
 
 type GraphQLResponse<T> = {
   data?: T
@@ -190,10 +191,6 @@ function getOwnerInitials(ownerName: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("") || "O"
-}
-
-function getOwnerRoomId(ownerId?: string | null) {
-  return ownerId ? `owner-${ownerId.slice(0, 8).toLowerCase()}` : ""
 }
 
 function formatDuration(seconds: number) {
@@ -421,12 +418,12 @@ export default function FoundItemPage() {
   }
 
   const startCall = async (withVideo: boolean) => {
-    if (!item?.qrCode.ownerId) {
-      setCallError("This QR code is not linked to an owner yet")
+    if (!item?.valuable?.id) {
+      setCallError("This QR code is not linked to a registered item yet")
       return
     }
 
-    const roomId = getOwnerRoomId(item.qrCode.ownerId)
+    const roomId = getValuableRoomId(item.valuable.id)
     if (!roomId) {
       setCallError("Owner room was not available")
       return

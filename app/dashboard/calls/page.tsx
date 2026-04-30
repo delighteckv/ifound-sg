@@ -3,20 +3,26 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Mic,
   MicOff,
   PhoneCall,
   PhoneOff,
   Radio,
-  RefreshCw,
-  Copy,
   Loader2,
 } from "lucide-react"
 import { fetchAuthSession } from "aws-amplify/auth"
 import { configureAmplify } from "@/lib/amplify"
+import outputs from "@/amplify_outputs.json"
+import { getValuableRoomId } from "@/lib/call-room"
 import {
   ConsoleLogger,
   DefaultDeviceController,
@@ -27,6 +33,11 @@ import {
 } from "amazon-chime-sdk-js"
 
 configureAmplify()
+
+type GraphQLResponse<T> = {
+  data?: T
+  errors?: { message: string }[]
+}
 
 type MeetingResponse = {
   MeetingId: string
@@ -39,16 +50,124 @@ type AttendeeResponse = {
   ExternalUserId?: string
 }
 
+type ValuableRecord = {
+  id: string
+  ownerId: string
+  name?: string | null
+  category?: string | null
+}
+
+type UserRecord = {
+  cognitoId: string
+  displayName?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  email?: string | null
+}
+
+type AccessRecord = {
+  valuableId: string
+  canReceiveCalls?: boolean | null
+}
+
+type AccessibleCallTarget = {
+  valuableId: string
+  label: string
+  ownerLabel: string
+  relation: "own" | "shared"
+}
+
+const valuablesByOwnerQuery = /* GraphQL */ `
+  query ValuablesByOwnerForCalls($ownerId: ID!, $limit: Int) {
+    ValuablesByOwner(ownerId: $ownerId, limit: $limit) {
+      items {
+        id
+        ownerId
+        name
+        category
+      }
+    }
+  }
+`
+
+const valuableAccessByGranteeQuery = /* GraphQL */ `
+  query ValuableAccessByGranteeForCalls($granteeUserId: ID!, $limit: Int) {
+    ValuableAccessByGrantee(granteeUserId: $granteeUserId, limit: $limit) {
+      items {
+        valuableId
+        canReceiveCalls
+      }
+    }
+  }
+`
+
+const getValuableQuery = /* GraphQL */ `
+  query GetValuableForCalls($id: ID!) {
+    getValuable(id: $id) {
+      id
+      ownerId
+      name
+      category
+    }
+  }
+`
+
+const getUserQuery = /* GraphQL */ `
+  query GetUserForCalls($cognitoId: ID!) {
+    getUser(cognitoId: $cognitoId) {
+      cognitoId
+      displayName
+      firstName
+      lastName
+      email
+    }
+  }
+`
+
+function getUserLabel(user?: UserRecord | null) {
+  const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim()
+  return user?.displayName || fullName || user?.email || user?.cognitoId || "Owner"
+}
+
+function RelationBadge({ target }: { target: AccessibleCallTarget }) {
+  return (
+    <div className="rounded-xl border border-border/50 bg-card/40 px-3 py-2 text-right text-xs text-muted-foreground">
+      <p className="font-medium text-foreground">{target.relation === "shared" ? "Shared access" : "Primary owner"}</p>
+      <p>{target.relation === "shared" ? `Shared by ${target.ownerLabel}` : "Receiving calls for your own item"}</p>
+    </div>
+  )
+}
+
+async function runAuthenticatedGraphQL<T>(accessToken: string, query: string, variables: Record<string, unknown>) {
+  const response = await fetch(outputs.data.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ query, variables }),
+  })
+
+  const json = (await response.json()) as GraphQLResponse<T>
+  if (!response.ok || json.errors?.length) {
+    throw new Error(json.errors?.[0]?.message || "GraphQL request failed")
+  }
+  if (!json.data) {
+    throw new Error("GraphQL response did not include data")
+  }
+  return json.data
+}
+
 export default function CallsPage() {
-  const [roomId, setRoomId] = useState("")
-  const [displayRoomId, setDisplayRoomId] = useState("")
+  const [selectedValuableId, setSelectedValuableId] = useState("")
   const [status, setStatus] = useState("Ready")
   const [error, setError] = useState("")
   const [isBusy, setIsBusy] = useState(false)
   const [isJoined, setIsJoined] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [attendeeCount, setAttendeeCount] = useState(1)
-  const [ownerId, setOwnerId] = useState("")
+  const [userId, setUserId] = useState("")
+  const [targets, setTargets] = useState<AccessibleCallTarget[]>([])
   const [logs, setLogs] = useState<string[]>([])
   const audioElementRef = useRef<HTMLAudioElement | null>(null)
   const sessionRef = useRef<MeetingSession | null>(null)
@@ -61,34 +180,19 @@ export default function CallsPage() {
     setLogs((current) => [entry, ...current].slice(0, 40))
   }
 
-  useEffect(() => {
-    pushLog("Calls page mounted")
-    let active = true
-    const loadIdentity = async () => {
-      try {
-        const session = await fetchAuthSession()
-        const payload = session.tokens?.idToken?.payload
-        const sub = payload?.sub as string | undefined
-        accessTokenRef.current = session.tokens?.accessToken?.toString() ?? ""
-        if (active && sub) {
-          setOwnerId(sub)
-          pushLog(`Loaded owner identity ${sub.slice(0, 8)}...`)
-        }
-      } catch {
-        pushLog("Could not load owner identity from session")
-      }
-    }
-    loadIdentity()
-    return () => {
-      active = false
-      teardownSession()
-    }
-  }, [])
-
-  const effectiveRoomId = useMemo(
-    () => displayRoomId || roomId.trim().toLowerCase(),
-    [displayRoomId, roomId],
+  const selectedTarget = useMemo(
+    () => targets.find((target) => target.valuableId === selectedValuableId) || null,
+    [selectedValuableId, targets],
   )
+
+  const effectiveRoomId = useMemo(() => getValuableRoomId(selectedValuableId), [selectedValuableId])
+
+  const handlePresenceChange = (_attendeeId: string, present: boolean) => {
+    setAttendeeCount((current) => {
+      if (present) return current + 1
+      return Math.max(1, current - 1)
+    })
+  }
 
   const teardownSession = () => {
     const current = sessionRef.current
@@ -100,27 +204,101 @@ export default function CallsPage() {
     sessionRef.current = null
   }
 
-  const handlePresenceChange = (_attendeeId: string, present: boolean) => {
-    setAttendeeCount((current) => {
-      if (present) return current + 1
-      return Math.max(1, current - 1)
-    })
-  }
+  useEffect(() => {
+    pushLog("Calls page mounted")
+    let active = true
 
-  const ensureRoomId = () => {
-    const normalized = roomId.trim().toLowerCase()
-    if (normalized) return normalized
-    const generated = ownerId ? `owner-${ownerId.slice(0, 8)}` : `room-${crypto.randomUUID().slice(0, 8)}`
-    setRoomId(generated)
-    return generated
-  }
+    const loadIdentity = async () => {
+      try {
+        const session = await fetchAuthSession()
+        const payload = session.tokens?.idToken?.payload
+        const sub = payload?.sub as string | undefined
+        accessTokenRef.current = session.tokens?.accessToken?.toString() ?? ""
+        if (!sub || !accessTokenRef.current) {
+          throw new Error("Missing user session")
+        }
+
+        if (active) {
+          setUserId(sub)
+          pushLog(`Loaded user identity ${sub.slice(0, 8)}...`)
+        }
+
+        const [ownValuablesData, accessData] = await Promise.all([
+          runAuthenticatedGraphQL<{ ValuablesByOwner: { items: ValuableRecord[] } }>(
+            accessTokenRef.current,
+            valuablesByOwnerQuery,
+            { ownerId: sub, limit: 200 },
+          ),
+          runAuthenticatedGraphQL<{ ValuableAccessByGrantee: { items: AccessRecord[] } }>(
+            accessTokenRef.current,
+            valuableAccessByGranteeQuery,
+            { granteeUserId: sub, limit: 200 },
+          ),
+        ])
+
+        const ownTargets: AccessibleCallTarget[] = (ownValuablesData.ValuablesByOwner.items || []).map((valuable) => ({
+          valuableId: valuable.id,
+          label: valuable.name || valuable.category || valuable.id,
+          ownerLabel: "You",
+          relation: "own",
+        }))
+
+        const sharedAccesses = (accessData.ValuableAccessByGrantee.items || []).filter(
+          (entry) => entry.canReceiveCalls && entry.valuableId,
+        )
+        const sharedTargets = await Promise.all(
+          Array.from(new Set(sharedAccesses.map((entry) => entry.valuableId))).map(async (valuableId) => {
+            const valuableData = await runAuthenticatedGraphQL<{ getValuable: ValuableRecord | null }>(
+              accessTokenRef.current,
+              getValuableQuery,
+              { id: valuableId },
+            )
+            const valuable = valuableData.getValuable
+            if (!valuable) return null
+
+            const ownerData = await runAuthenticatedGraphQL<{ getUser: UserRecord | null }>(
+              accessTokenRef.current,
+              getUserQuery,
+              { cognitoId: valuable.ownerId },
+            )
+
+            return {
+              valuableId: valuable.id,
+              label: valuable.name || valuable.category || valuable.id,
+              ownerLabel: getUserLabel(ownerData.getUser),
+              relation: "shared" as const,
+            }
+          }),
+        )
+
+        if (active) {
+          const nextTargets = [...ownTargets, ...((sharedTargets.filter(Boolean) as AccessibleCallTarget[]))]
+          setTargets(nextTargets)
+          setSelectedValuableId((current) => current || nextTargets[0]?.valuableId || "")
+          pushLog(`Loaded ${nextTargets.length} call target(s)`)
+        }
+      } catch (error: any) {
+        pushLog(error?.message || "Could not load call access")
+      }
+    }
+
+    void loadIdentity()
+    return () => {
+      active = false
+      teardownSession()
+    }
+  }, [])
 
   const joinRoom = async () => {
-    const targetRoomId = ensureRoomId()
+    if (!selectedValuableId || !effectiveRoomId) {
+      setError("Select an item first")
+      return
+    }
+
     setIsBusy(true)
     setError("")
-    setStatus("Preparing call…")
-    pushLog(`Starting join flow for room ${targetRoomId}`)
+    setStatus("Preparing call...")
+    pushLog(`Starting join flow for item ${selectedValuableId}`)
 
     try {
       if (!accessTokenRef.current) {
@@ -139,8 +317,8 @@ export default function CallsPage() {
           Authorization: `Bearer ${accessTokenRef.current}`,
         },
         body: JSON.stringify({
-          roomId: targetRoomId,
-          userId: ownerId || `owner-${crypto.randomUUID().slice(0, 8)}`,
+          roomId: effectiveRoomId,
+          userId: userId || `owner-${crypto.randomUUID().slice(0, 8)}`,
         }),
       })
 
@@ -152,12 +330,11 @@ export default function CallsPage() {
       }
 
       pushLog("/api/calls/join completed")
-      const payload = raw
-      const meeting = payload?.meeting ? (JSON.parse(payload.meeting) as MeetingResponse) : null
-      const attendee = payload?.attendee ? (JSON.parse(payload.attendee) as AttendeeResponse) : null
+      const meeting = raw?.meeting ? (JSON.parse(raw.meeting) as MeetingResponse) : null
+      const attendee = raw?.attendee ? (JSON.parse(raw.attendee) as AttendeeResponse) : null
 
       if (!meeting || !attendee) {
-        pushLog(`Join payload missing data: ${JSON.stringify(payload)}`)
+        pushLog(`Join payload missing data: ${JSON.stringify(raw)}`)
         throw new Error("Meeting join response was incomplete")
       }
 
@@ -192,7 +369,6 @@ export default function CallsPage() {
       session.audioVideo.start()
       pushLog("Audio session started")
 
-      setDisplayRoomId(targetRoomId)
       setIsJoined(true)
       setIsMuted(false)
       setStatus("Connected")
@@ -230,12 +406,6 @@ export default function CallsPage() {
     setIsMuted(true)
   }
 
-  const copyRoomId = async () => {
-    if (!effectiveRoomId) return
-    await navigator.clipboard.writeText(effectiveRoomId)
-    setStatus("Room ID copied")
-  }
-
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -244,7 +414,7 @@ export default function CallsPage() {
             Calls
           </h1>
           <p className="text-muted-foreground">
-            Start an owner call in the browser using Amazon Chime SDK.
+            Join live calls for your own items or items another owner explicitly shared with you.
           </p>
         </motion.div>
       </div>
@@ -257,26 +427,21 @@ export default function CallsPage() {
         >
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="room-id">Room ID</Label>
-              <div className="flex gap-3">
-                <Input
-                  id="room-id"
-                  value={roomId}
-                  onChange={(event) => setRoomId(event.target.value)}
-                  placeholder="owner-vishnu or auto-generate on join"
-                  className="h-11 rounded-xl border-border/50 bg-secondary/50"
-                />
-                <Button
-                  variant="outline"
-                  className="rounded-xl border-border/50"
-                  onClick={() => setRoomId(`room-${crypto.randomUUID().slice(0, 8)}`)}
-                >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Generate
-                </Button>
-              </div>
+              <Label>Item / Call Access</Label>
+              <Select value={selectedValuableId} onValueChange={setSelectedValuableId}>
+                <SelectTrigger className="h-11 rounded-xl border-border/50 bg-secondary/50">
+                  <SelectValue placeholder="Select an item you can receive calls for" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  {targets.map((target) => (
+                    <SelectItem key={target.valuableId} value={target.valuableId}>
+                      {target.label} {target.relation === "shared" ? `- shared by ${target.ownerLabel}` : "- your item"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
-                Use the same room ID on both sides of the call.
+                Finder calls are item-specific. Only your own items and explicitly shared items appear here.
               </p>
             </div>
 
@@ -285,23 +450,14 @@ export default function CallsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Call status</p>
                   <p className="mt-1 text-2xl font-semibold text-foreground">{status}</p>
-                  {effectiveRoomId && (
+                  {selectedTarget ? (
                     <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
                       <Radio className="h-4 w-4 text-primary" />
-                      Room: <span className="font-mono text-foreground">{effectiveRoomId}</span>
+                      Item: <span className="text-foreground">{selectedTarget.label}</span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
-                {effectiveRoomId && (
-                  <Button
-                    variant="outline"
-                    className="rounded-xl border-border/50"
-                    onClick={copyRoomId}
-                  >
-                    <Copy className="mr-2 h-4 w-4" />
-                    Copy ID
-                  </Button>
-                )}
+                {selectedTarget ? <RelationBadge target={selectedTarget} /> : null}
               </div>
             </div>
 
@@ -312,7 +468,7 @@ export default function CallsPage() {
                 <Button
                   className="rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:opacity-90"
                   onClick={joinRoom}
-                  disabled={isBusy}
+                  disabled={isBusy || !selectedValuableId}
                 >
                   {isBusy ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -362,9 +518,15 @@ export default function CallsPage() {
           </h2>
           <div className="mt-6 space-y-4">
             <div className="rounded-xl bg-secondary/20 p-4">
-              <p className="text-sm text-muted-foreground">Signed-in owner</p>
+              <p className="text-sm text-muted-foreground">Signed-in user</p>
               <p className="mt-1 break-all font-mono text-sm text-foreground">
-                {ownerId || "Loading..."}
+                {userId || "Loading..."}
+              </p>
+            </div>
+            <div className="rounded-xl bg-secondary/20 p-4">
+              <p className="text-sm text-muted-foreground">Receiving for</p>
+              <p className="mt-1 text-foreground">
+                {selectedTarget ? `${selectedTarget.label} (${selectedTarget.relation === "shared" ? `shared by ${selectedTarget.ownerLabel}` : "your item"})` : "No accessible item selected"}
               </p>
             </div>
             <div className="rounded-xl bg-secondary/20 p-4">
@@ -378,7 +540,7 @@ export default function CallsPage() {
               </p>
             </div>
             <div className="rounded-xl bg-secondary/20 p-4 text-sm text-muted-foreground">
-              This page is audio-only. Use the same room ID on the other participant device to join the call.
+              This page is audio-only. Finder calls for the selected item land in this room. Shared users can join only items they were granted call access for.
             </div>
             <div className="rounded-xl bg-secondary/20 p-4">
               <div className="mb-2 flex items-center justify-between">
@@ -410,3 +572,4 @@ export default function CallsPage() {
     </div>
   )
 }
+

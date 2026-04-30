@@ -32,6 +32,7 @@ import {
   Search,
   ChevronDown,
   ShieldCheck,
+  KeyRound,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -57,6 +58,7 @@ const navItems = [
     items: [
       { title: "Users", href: "/dashboard/users", icon: Users, adminOnly: true },
       { title: "QR Codes", href: "/dashboard/qr-codes", icon: QrCode },
+      { title: "Invitations", href: "/dashboard/invitations", icon: KeyRound },
       { title: "Scan Activity", href: "/dashboard/activity", icon: Activity },
       { title: "Calls", href: "/dashboard/calls", icon: PhoneCall },
     ],
