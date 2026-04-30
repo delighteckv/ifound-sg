@@ -45,6 +45,7 @@ type GraphQLResponse<T> = {
 
 type QrRecord = {
   code: string
+  qrImagePath?: string | null
   packId?: string | null
   packSize?: number | null
   packPosition?: number | null
@@ -91,7 +92,10 @@ type UserRecord = {
 
 type QRRow = {
   id: string
+  qrImagePath?: string | null
   itemName: string
+  packPosition?: number | null
+  packSize?: number | null
   serialNumber?: string
   category: string
   owner: string
@@ -141,6 +145,7 @@ const qrCodesByOwnerQuery = /* GraphQL */ `
     QrCodesByOwner(ownerId: $ownerId, limit: $limit, nextToken: $nextToken) {
       items {
         code
+        qrImagePath
         packId
         packSize
         packPosition
@@ -165,6 +170,7 @@ const qrCodesByPackOwnerQuery = /* GraphQL */ `
     QrCodesByPackOwner(packOwnerId: $packOwnerId, limit: $limit, nextToken: $nextToken) {
       items {
         code
+        qrImagePath
         packId
         packSize
         packPosition
@@ -189,6 +195,7 @@ const qrCodesByStatusQuery = /* GraphQL */ `
     QrCodesByStatus(status: $status, limit: $limit, nextToken: $nextToken) {
       items {
         code
+        qrImagePath
         packId
         packSize
         packPosition
@@ -213,6 +220,7 @@ const qrCodesByPackQuery = /* GraphQL */ `
     QrCodesByPack(packId: $packId, limit: $limit, nextToken: $nextToken) {
       items {
         code
+        qrImagePath
         packId
         packSize
         packPosition
@@ -282,6 +290,7 @@ const getQrCodeQuery = /* GraphQL */ `
   query GetQrCode($code: String!) {
     getQrCode(code: $code) {
       code
+      qrImagePath
       packId
       packSize
       packPosition
@@ -312,6 +321,7 @@ const createQrCodeMutation = /* GraphQL */ `
   mutation CreateQrCode($input: CreateQrCodeInput!) {
     createQrCode(input: $input) {
       code
+      qrImagePath
     }
   }
 `
@@ -328,6 +338,7 @@ const updateQrCodeMutation = /* GraphQL */ `
   mutation UpdateQrCode($input: UpdateQrCodeInput!) {
     updateQrCode(input: $input) {
       code
+      qrImagePath
     }
   }
 `
@@ -403,6 +414,19 @@ async function uploadQrPng(code: string, payload: string) {
   })
 
   return { publicUrl: url.url.toString() }
+}
+
+async function getQrPngUrl(path: string, code: string) {
+  const url = await getUrl({
+    path,
+    options: {
+      expiresIn: 3600,
+      contentDisposition: `attachment; filename="${code}.png"`,
+      contentType: "image/png",
+    },
+  })
+
+  return { publicUrl: url.url.toString(), path }
 }
 
 function sanitizeFileNamePart(value: string) {
@@ -543,7 +567,10 @@ export default function QRCodesPage() {
         const nextRows = [...(unassignedData.QrCodesByStatus.items || []), ...(assignedData.QrCodesByStatus.items || [])]
           .map((qr) => ({
             id: qr.code,
+            qrImagePath: qr.qrImagePath || null,
             itemName: qr.label || (qr.status === "UNASSIGNED" ? "Awaiting registration" : "Registered item"),
+            packPosition: qr.packPosition || null,
+            packSize: qr.packSize || null,
             category: qr.status === "UNASSIGNED" ? "Inventory" : "Assigned",
             owner: qr.packOwnerId ? ownerLabelMap.get(qr.packOwnerId) || qr.packOwnerId.slice(0, 8) : "Not assigned",
             packOwnerId: qr.packOwnerId || null,
@@ -587,7 +614,10 @@ export default function QRCodesPage() {
         const stats = scanStats.get(qr.code) ?? { scans: 0, lastScanned: null }
         return {
           id: qr.code,
+          qrImagePath: qr.qrImagePath || null,
           itemName: valuable?.name || qr.label || "Awaiting registration",
+          packPosition: qr.packPosition || null,
+          packSize: qr.packSize || null,
           serialNumber: valuable?.serialNumber || "",
           category: valuable?.category || (qr.status === "UNASSIGNED" ? "Purchased pack" : "Other"),
           owner: currentOwnerLabel,
@@ -891,7 +921,14 @@ export default function QRCodesPage() {
                 status: "UNASSIGNED",
               },
             })
-            await uploadQrPng(entry.code, buildQrCodeValue(entry.code))
+            const uploadResult = await uploadQrPng(entry.code, buildQrCodeValue(entry.code))
+            await runGraphQL(updateQrCodeMutation, {
+              input: {
+                code: entry.code,
+                qrImagePath: `public/qr-codes/${entry.code}.png`,
+              },
+            })
+            return uploadResult
           }),
         )
       }
@@ -981,10 +1018,76 @@ export default function QRCodesPage() {
 
   const handleDownload = async (row: QRRow) => {
     try {
-      const result = await uploadQrPng(row.id, buildQrCodeValue(row.id))
+      let result
+      if (row.qrImagePath) {
+        result = await getQrPngUrl(row.qrImagePath, row.id)
+      } else {
+        result = await uploadQrPng(row.id, buildQrCodeValue(row.id))
+        const qrImagePath = `public/qr-codes/${row.id}.png`
+        await runGraphQL(updateQrCodeMutation, {
+          input: {
+            code: row.id,
+            qrImagePath,
+          },
+        })
+      }
       window.open(result.publicUrl, "_blank", "noopener,noreferrer")
+      await loadRows(ownerId, ownerLabel, isAdmin)
     } catch (err: any) {
       setError(err?.message || "Unable to download QR code")
+    }
+  }
+
+  const handleDownloadPack = async (row: QRRow) => {
+    if (!row.packId) {
+      setError("This QR code is not part of a pack")
+      return
+    }
+
+    try {
+      const packData = await runGraphQL<{ QrCodesByPack: { items: QrRecord[] } }>(qrCodesByPackQuery, {
+        packId: row.packId,
+        limit: 50,
+      })
+
+      const packItems = (packData.QrCodesByPack.items || [])
+        .slice()
+        .sort((left, right) => (left.packPosition || 0) - (right.packPosition || 0))
+        .map((item) => ({
+          code: item.code,
+          position: item.packPosition || null,
+        }))
+
+      if (!packItems.length) {
+        throw new Error("Pack does not exist")
+      }
+
+      const response = await fetch("/api/qr/pack-download", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          packId: row.packId,
+          baseUrl: window.location.origin,
+          codes: packItems,
+        }),
+      })
+
+      if (!response.ok) {
+        const json = await response.json().catch(() => null)
+        throw new Error(json?.error || "Unable to generate pack sheet")
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `${row.packId}.png`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      setError(err?.message || "Unable to download full pack")
     }
   }
 
@@ -1171,6 +1274,12 @@ export default function QRCodesPage() {
                   <Download className="mr-2 h-4 w-4" />
                   Download QR
                 </DropdownMenuItem>
+                {isAdmin && row.packId ? (
+                  <DropdownMenuItem className="rounded-lg" onClick={() => void handleDownloadPack(row)}>
+                    <PackagePlus className="mr-2 h-4 w-4" />
+                    Download Full Pack
+                  </DropdownMenuItem>
+                ) : null}
                 {isAdmin && row.packId ? (
                   <DropdownMenuItem className="rounded-lg" onClick={() => openAssignPack(row)}>
                     <Edit className="mr-2 h-4 w-4" />
